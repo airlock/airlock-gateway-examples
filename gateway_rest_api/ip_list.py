@@ -29,7 +29,7 @@ group_action.add_argument("-r", dest="action", action="store_const",
                           const="remove", help="Remove IP list")
 group_sel = parser.add_mutually_exclusive_group(required=True)
 group_sel.add_argument("-m", dest="mapping_selector_pattern",
-                       metavar="pattern", help="Pattern matching mapping name, e.g. ^mapping_a$")
+           metavar="pattern", help="Pattern matching mapping name, e.g. ^mapping_a$")
 group_sel.add_argument("-l", dest="mapping_selector_label", metavar="label",
                        help="Label for mapping selection")
 parser.add_argument("-i", dest="iplist", metavar="pattern", required=True,
@@ -39,6 +39,9 @@ group_type.add_argument("-w", dest="blacklist", action="store_false",
                         help="Modify whitelist")
 group_type.add_argument("-b", dest="blacklist", action="store_true",
                         help="Modify blacklist")
+parser.add_argument("-o", dest="log_only", required=False,
+            choices = [ 'true', 'false' ],
+            help="Enable/disable 'log only' on all affected mappings for the specified IP list type")
 parser.add_argument("-f", dest="confirm", action="store_false",
                     help="Force, no confirmation needed")
 
@@ -128,6 +131,22 @@ for mapping_id in mapping_ids:
     send_request(method,
                  "configuration/mappings/{}/relationships/ip-address-{}"
                  .format(mapping_id, list_type), json.dumps(data))
+    if args.log_only:
+        data = {
+            "data" : {
+                "attributes" : {
+                    "ipRules" : {
+                        "ipAddress{}".format(list_type.title()) : {
+                            "logOnly" : True if args.log_only == "true" else False
+                        }
+                    }
+                },
+                "id" : mapping_id,
+                "type" : "mapping"
+            }
+        }
+        send_request("PATCH", "configuration/mappings/{}"
+                     .format(mapping_id), json.dumps(data))
 
 if args.confirm:
     answer = input('{} {} group(s) "{}" - mapping(s): {}\nContinue to save the config? [y/n] '
