@@ -1,6 +1,8 @@
 #!/usr/bin/env python2
 # coding=utf-8
 
+# version 1.0
+
 # demo script to activate maintenance page on a WAF mapping
 
 # missing 
@@ -20,6 +22,7 @@ import os
 import sys
 from argparse import ArgumentParser
 from cookielib import CookieJar
+from signal import *
 
 parser = ArgumentParser(add_help=False)
 parser.add_argument("-h", dest="host", metavar="<WAF hostname>", required=True,
@@ -49,6 +52,7 @@ if (not os.environ.get('PYTHONHTTPSVERIFY', '') and
     getattr(ssl, '_create_unverified_context', None)): 
     ssl._create_default_https_context = ssl._create_unverified_context
 
+
 # method to send REST calls
 def send_request(method, path, body={}):
 	req = urllib2.Request(TARGET_WAF + path, body, DEFAULT_HEADERS)
@@ -56,8 +60,23 @@ def send_request(method, path, body={}):
 	r = opener.open(req)
 	return r.read()
 
+
+def terminate_and_exit(text):
+    send_request("POST", "/airlock/rest/session/terminate")
+    sys.exit(text)
+
+
 # create session
 send_request("POST", "/airlock/rest/session/create")
+
+
+# signal handler
+def cleanup(signum, frame):
+    terminate_and_exit("Terminate session")
+
+
+for sig in (SIGABRT, SIGILL, SIGINT, SIGSEGV, SIGTERM):
+    signal(sig, cleanup)
 
 # get active config id
 resp = json.loads(send_request("GET", "/airlock/rest/configuration/configurations"))
@@ -73,7 +92,7 @@ resp = json.loads(send_request("GET", "/airlock/rest/configuration/mappings"))
 m_ids = [x['id'] for x in resp['data'] if(x['attributes']['name'] == args.mapping)]
 
 if not m_ids:
-    sys.exit("Mapping '{}' not found".format(args.mapping))
+    terminate_and_exit("Mapping '{}' not found".format(args.mapping))
 else:
     mapping_id = m_ids[0]
 
@@ -99,3 +118,5 @@ data = { "comment" : CONFIG_COMMENT }
 
 # activate config
 send_request("POST", "/airlock/rest/configuration/configurations/activate", json.dumps(data))
+
+terminate_and_exit(0)
