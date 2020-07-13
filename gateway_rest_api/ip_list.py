@@ -9,9 +9,10 @@ import sys
 import re
 from argparse import ArgumentParser
 from http.cookiejar import CookieJar
+from signal import *
 
 ###############################################################################
-# Version 1.0
+# Version 1.1
 
 # Example usage
 # ./ip_list.py -a -n airlock.ergon.ch -l ^mapping_a$ -i ^IP-list99$ -b
@@ -79,8 +80,22 @@ def send_request(method, path, body=""):
     return r.read()
 
 
+def terminate_and_exit(text):
+    send_request("POST", "session/terminate")
+    sys.exit(text)
+
+
 # create session
 send_request("POST", "session/create")
+
+
+# signal handler
+def cleanup(signum, frame):
+    terminate_and_exit("Terminate session")
+
+
+for sig in (SIGABRT, SIGILL, SIGINT, SIGSEGV, SIGTERM):
+    signal(sig, cleanup)
 
 # get last config (active or saved)
 resp = json.loads(send_request("GET", "configuration/configurations"))
@@ -100,7 +115,7 @@ mapping_names = [x['attributes']['name'] for x in resp['data']
                  if(x['id'] in mapping_ids)]
 
 if not mapping_ids:
-    sys.exit("No mapping found - exit")
+    terminate_and_exit("No mapping found - exit")
 
 # get all ip lists
 resp = json.loads(send_request("GET", "configuration/ip-address-lists"))
@@ -112,7 +127,7 @@ ip_list_names = [x['attributes']['name'] for x in resp['data']
                  if(x['id'] in ip_list_ids)]
 
 if not ip_list_ids:
-    sys.exit("IP list matching '{}' not found".format(args.iplist))
+    terminate_and_exit("IP list matching '{}' not found".format(args.iplist))
 else:
     ip_list_id = ip_list_ids[0]
 
@@ -153,7 +168,9 @@ if args.confirm:
                    .format(args.action, list_type[:-1],
                            ', '.join(ip_list_names), '\n\t'
                            .join(sorted(mapping_names))))
-    answer != 'y' and sys.exit("Nothing changed")
+    if answer != 'y':
+        print("Nothing changed")
+        terminate_and_exit(0)
 
 config_comment = 'REST: {} {} IP list(s) "{}" on mapping(s): "{}"' \
     .format(args.action, list_type[:-1],
@@ -168,5 +185,4 @@ print('Config saved with comment: {}'.format(config_comment))
 # send_request("POST", "configuration/configurations/activate",
 #              json.dumps(data))
 
-# logout
-send_request("POST", "session/terminate")
+terminate_and_exit(0)
