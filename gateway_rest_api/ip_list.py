@@ -9,7 +9,7 @@ import sys
 import re
 from argparse import ArgumentParser
 from http.cookiejar import CookieJar
-from signal import *
+import signal
 
 ###############################################################################
 # Version 1.1
@@ -30,7 +30,8 @@ group_action.add_argument("-r", dest="action", action="store_const",
                           const="remove", help="Remove IP list")
 group_sel = parser.add_mutually_exclusive_group(required=True)
 group_sel.add_argument("-m", dest="mapping_selector_pattern",
-           metavar="pattern", help="Pattern matching mapping name, e.g. ^mapping_a$")
+                       metavar="pattern",
+                       help="Pattern matching mapping name, e.g. ^mapping_a$")
 group_sel.add_argument("-l", dest="mapping_selector_label", metavar="label",
                        help="Label for mapping selection")
 parser.add_argument("-i", dest="iplist", metavar="pattern", required=True,
@@ -41,8 +42,9 @@ group_type.add_argument("-w", dest="blacklist", action="store_false",
 group_type.add_argument("-b", dest="blacklist", action="store_true",
                         help="Modify blacklist")
 parser.add_argument("-o", dest="log_only", required=False,
-            choices = [ 'true', 'false' ],
-            help="Enable/disable 'log only' on all affected mappings for the specified IP list type")
+                    choices=['true', 'false'],
+                    help="Enable/disable 'log only' on all affected mappings '
+                    "for the specified IP list type")
 parser.add_argument("-f", dest="confirm", action="store_false",
                     help="Force, no confirmation needed")
 
@@ -94,12 +96,14 @@ def cleanup(signum, frame):
     terminate_and_exit("Terminate session")
 
 
-for sig in (SIGABRT, SIGILL, SIGINT, SIGSEGV, SIGTERM):
-    signal(sig, cleanup)
+for sig in (signal.SIGABRT, signal.SIGILL, signal.SIGINT, signal.SIGSEGV,
+            signal.SIGTERM):
+    signal.signal(sig, cleanup)
 
 # get last config (active or saved)
 resp = json.loads(send_request("GET", "configuration/configurations"))
-send_request("POST", "configuration/configurations/{}/load".format(resp['data'][0]['id']))
+send_request("POST", "configuration/configurations/{}/load"
+                     .format(resp['data'][0]['id']))
 
 # get all mappings
 resp = json.loads(send_request("GET", "configuration/mappings"))
@@ -148,23 +152,25 @@ for mapping_id in mapping_ids:
                  .format(mapping_id, list_type), json.dumps(data))
     if args.log_only:
         data = {
-            "data" : {
-                "attributes" : {
-                    "ipRules" : {
-                        "ipAddress{}".format(list_type.title()) : {
-                            "logOnly" : True if args.log_only == "true" else False
+            "data": {
+                "attributes": {
+                    "ipRules": {
+                        "ipAddress{}".format(list_type.title()): {
+                            "logOnly": True if args.log_only == "true"
+                            else False
                         }
                     }
                 },
-                "id" : mapping_id,
-                "type" : "mapping"
+                "id": mapping_id,
+                "type": "mapping"
             }
         }
         send_request("PATCH", "configuration/mappings/{}"
                      .format(mapping_id), json.dumps(data))
 
 if args.confirm:
-    answer = input('{} {} group(s) "{}" - mapping(s): {}\nContinue to save the config? [y/n] '
+    answer = input('{} {} group(s) "{}" - mapping(s): {}\n'
+                   'Continue to save the config? [y/n] '
                    .format(args.action, list_type[:-1],
                            ', '.join(ip_list_names), '\n\t'
                            .join(sorted(mapping_names))))
