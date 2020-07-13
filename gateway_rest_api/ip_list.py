@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 # coding=utf-8
+"""
+Version 1.1
+Script to manage IP list usages
+"""
 
 from urllib import request
 import ssl
@@ -11,14 +15,7 @@ from argparse import ArgumentParser
 from http.cookiejar import CookieJar
 import signal
 
-###############################################################################
-# Version 1.1
-
-# Example usage
-# ./ip_list.py -a -n airlock.ergon.ch -l ^mapping_a$ -i ^IP-list99$ -b
-
 API_KEY_FILE = "./api_key"
-###############################################################################
 
 parser = ArgumentParser()
 parser.add_argument("-n", dest="host", metavar="hostname", required=True,
@@ -43,7 +40,7 @@ group_type.add_argument("-b", dest="blacklist", action="store_true",
                         help="Modify blacklist")
 parser.add_argument("-o", dest="log_only", required=False,
                     choices=['true', 'false'],
-                    help="Enable/disable 'log only' on all affected mappings '
+                    help="Enable/disable 'log only' on all affected mappings "
                     "for the specified IP list type")
 parser.add_argument("-f", dest="confirm", action="store_false",
                     help="Force, no confirmation needed")
