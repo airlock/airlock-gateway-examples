@@ -1,6 +1,6 @@
 This repository contains a set of example scripts for the Airlock Gateway REST interface.
 
-**Your use of any script is at your own risk and without warranty of any kind**
+**Your use of any script is at your own risk and without warranty of any kind.**
 
 The scripts are not part of the official Airlock product delivery and Ergon/Airlock does not provide support for it. Best effort support may be provided by the contributor of the script.
 
