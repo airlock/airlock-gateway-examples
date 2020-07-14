@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 # coding=utf-8
+"""
+Version 1.1
+Script to manage IP list usages
+"""
 
 from urllib import request
 import ssl
@@ -9,16 +13,9 @@ import sys
 import re
 from argparse import ArgumentParser
 from http.cookiejar import CookieJar
-from signal import *
-
-###############################################################################
-# Version 1.2
-
-# Example usage
-# ./ip_list.py -a -n airlock.ergon.ch -l ^mapping_a$ -i ^IP-list99$ -b
+import signal
 
 API_KEY_FILE = "./api_key"
-###############################################################################
 
 parser = ArgumentParser()
 parser.add_argument("-n", dest="host", metavar="hostname", required=True,
@@ -30,7 +27,8 @@ group_action.add_argument("-r", dest="action", action="store_const",
                           const="remove", help="Remove IP list")
 group_sel = parser.add_mutually_exclusive_group(required=True)
 group_sel.add_argument("-m", dest="mapping_selector_pattern",
-           metavar="pattern", help="Pattern matching mapping name, e.g. ^mapping_a$")
+                       metavar="pattern",
+                       help="Pattern matching mapping name, e.g. ^mapping_a$")
 group_sel.add_argument("-l", dest="mapping_selector_label", metavar="label",
                        help="Label for mapping selection")
 parser.add_argument("-i", dest="iplist", metavar="pattern",
@@ -40,11 +38,12 @@ group_type.add_argument("-w", dest="blacklist", action="store_false",
                         help="Modify whitelist")
 group_type.add_argument("-b", dest="blacklist", action="store_true",
                         help="Modify blacklist")
+parser.add_argument("-o", dest="log_only", required=False,
+                    choices=['true', 'false'],
+                    help="Enable/disable 'log only' on all affected mappings "
+                    "for the specified IP list type")
 parser.add_argument("-f", dest="confirm", action="store_false",
                     help="Force, no confirmation needed")
-parser.add_argument("-o", dest="log_only",
-                choices = [ 'true', 'false' ],
-                help="Enable/disable 'log only' on all affected mappings for the specified IP list type")
 parser.add_argument("-k", dest="api_key", metavar="api_key",
                     help=f"API key if not specified in {API_KEY_FILE}", required=False)
 args = parser.parse_args()
@@ -98,12 +97,14 @@ def cleanup(signum, frame):
     terminate_and_exit("Terminate session")
 
 
-for sig in (SIGABRT, SIGILL, SIGINT, SIGSEGV, SIGTERM):
-    signal(sig, cleanup)
+for sig in (signal.SIGABRT, signal.SIGILL, signal.SIGINT, signal.SIGSEGV,
+            signal.SIGTERM):
+    signal.signal(sig, cleanup)
 
 # get last config (active or saved)
 resp = json.loads(send_request("GET", "configuration/configurations"))
-send_request("POST", "configuration/configurations/{}/load".format(resp['data'][0]['id']))
+send_request("POST", "configuration/configurations/{}/load"
+                     .format(resp['data'][0]['id']))
 
 # get all mappings
 resp = json.loads(send_request("GET", "configuration/mappings"))
@@ -151,43 +152,42 @@ for mapping_id in mapping_ids:
                  .format(mapping_id, list_type), json.dumps(data))
     if args.log_only:
         data = {
-            "data" : {
-                "attributes" : {
-                    "ipRules" : {
-                        "ipAddress{}".format(list_type.title()) : {
-                            "logOnly" : True if args.log_only == "true" else False
+            "data": {
+                "attributes": {
+                    "ipRules": {
+                        "ipAddress{}".format(list_type.title()): {
+                            "logOnly": True if args.log_only == "true"
+                            else False
                         }
                     }
                 },
-                "id" : mapping_id,
-                "type" : "mapping"
+                "id": mapping_id,
+                "type": "mapping"
             }
         }
         send_request("PATCH", "configuration/mappings/{}"
                      .format(mapping_id), json.dumps(data))
 
+change_info = ''
+if args.iplist:
+    change_info += '{} {} group(s) "{}"'.format(args.action, list_type[:-1],
+                  ', '.join(ip_list_names))
+    if args.log_only:
+        change_info += ' and '
+if args.log_only:
+    change_info += 'set log_only to "{}"'.format(args.log_only)
+change_info += ' for the following mapping(s): \n{}'.format('\n\t'.join(sorted(mapping_names)))
 if args.confirm:
-    print("Actions:")
-    if args.iplist:
-        print('- {} {} group(s) "{}" for the following mappings(s)'
-              .format(args.action, list_type[:-1],
-                      ', '.join(ip_list_names)))
-    if (args.log_only):
-        print('- Set log_only for the following mapping(s) to "{}"'
-              .format(args.log_only))
-    print('\t{}'.format('\n\t'.join(sorted(mapping_names))))
+    print(change_info)
     if input('\nContinue to save the config? [y/n] ') != 'y':
         print("Nothing changed")
         terminate_and_exit(0)
 
-config_comment = 'REST: {} {} IP list(s) "{}" on mapping(s): "{}"' \
-    .format(args.action, list_type[:-1],
-            ', '.join(ip_list_names), ', '.join(sorted(mapping_names)))
-data = {"comment": config_comment}
+data = {"comment": "REST: " + change_info.replace('\n','').replace('\t',',')}
 
 # save config
 send_request("POST", "configuration/configurations/save", json.dumps(data))
-print('Config saved with comment: {}'.format(config_comment))
+print('Config saved with comment: {}'.format(data['comment']))
 
 # activate config without failover activation!
 # send_request("POST", "configuration/configurations/activate",
