@@ -12,7 +12,7 @@ from http.cookiejar import CookieJar
 from signal import *
 
 ###############################################################################
-# Version 1.1
+# Version 1.2
 
 # Example usage
 # ./ip_list.py -a -n airlock.ergon.ch -l ^mapping_a$ -i ^IP-list99$ -b
@@ -33,26 +33,30 @@ group_sel.add_argument("-m", dest="mapping_selector_pattern",
            metavar="pattern", help="Pattern matching mapping name, e.g. ^mapping_a$")
 group_sel.add_argument("-l", dest="mapping_selector_label", metavar="label",
                        help="Label for mapping selection")
-parser.add_argument("-i", dest="iplist", metavar="pattern", required=True,
+parser.add_argument("-i", dest="iplist", metavar="pattern",
                     help="Pattern matching IP list, e.g. ^IP-list99$")
 group_type = parser.add_mutually_exclusive_group(required=True)
 group_type.add_argument("-w", dest="blacklist", action="store_false",
                         help="Modify whitelist")
 group_type.add_argument("-b", dest="blacklist", action="store_true",
                         help="Modify blacklist")
-parser.add_argument("-o", dest="log_only", required=False,
-            choices = [ 'true', 'false' ],
-            help="Enable/disable 'log only' on all affected mappings for the specified IP list type")
 parser.add_argument("-f", dest="confirm", action="store_false",
                     help="Force, no confirmation needed")
-
+parser.add_argument("-o", dest="log_only",
+                choices = [ 'true', 'false' ],
+                help="Enable/disable 'log only' on all affected mappings for the specified IP list type")
+parser.add_argument("-k", dest="api_key", metavar="api_key",
+                    help=f"API key if not specified in {API_KEY_FILE}", required=False)
 args = parser.parse_args()
 sys.tracebacklimit = 0
+
+if args.log_only and args.iplist is None:
+    parser.error("-i or -o (or both) required")
 
 TARGET_GATEWAY = "https://{}".format(args.host)
 
 try:
-    api_key = open(API_KEY_FILE, 'r').read().strip()
+    api_key = args.api_key if args.api_key else open(API_KEY_FILE, 'r').read().strip()
 except IOError:
     print("Please write the Airlock Gateway API key into file {}"
           .format(API_KEY_FILE))
@@ -120,16 +124,15 @@ if not mapping_ids:
 # get all ip lists
 resp = json.loads(send_request("GET", "configuration/ip-address-lists"))
 
+ip_list_ids = []
 # filter ip lists
-ip_list_ids = [x['id'] for x in resp['data']
-               if(re.search(args.iplist, x['attributes']['name']))]
-ip_list_names = [x['attributes']['name'] for x in resp['data']
-                 if(x['id'] in ip_list_ids)]
-
-if not ip_list_ids:
-    terminate_and_exit("IP list matching '{}' not found".format(args.iplist))
-else:
-    ip_list_id = ip_list_ids[0]
+if args.iplist:
+    ip_list_ids = [x['id'] for x in resp['data']
+                if(re.search(args.iplist, x['attributes']['name']))]
+    ip_list_names = [x['attributes']['name'] for x in resp['data']
+                    if(x['id'] in ip_list_ids)]
+    if not ip_list_ids:
+        terminate_and_exit("IP list matching '{}' not found".format(args.iplist))
 
 # patch the config
 for mapping_id in mapping_ids:
@@ -164,11 +167,16 @@ for mapping_id in mapping_ids:
                      .format(mapping_id), json.dumps(data))
 
 if args.confirm:
-    answer = input('{} {} group(s) "{}" - mapping(s): {}\nContinue to save the config? [y/n] '
-                   .format(args.action, list_type[:-1],
-                           ', '.join(ip_list_names), '\n\t'
-                           .join(sorted(mapping_names))))
-    if answer != 'y':
+    print("Actions:")
+    if args.iplist:
+        print('- {} {} group(s) "{}" for the following mappings(s)'
+              .format(args.action, list_type[:-1],
+                      ', '.join(ip_list_names)))
+    if (args.log_only):
+        print('- Set log_only for the following mapping(s) to "{}"'
+              .format(args.log_only))
+    print('\t{}'.format('\n\t'.join(sorted(mapping_names))))
+    if input('\nContinue to save the config? [y/n] ') != 'y':
         print("Nothing changed")
         terminate_and_exit(0)
 
