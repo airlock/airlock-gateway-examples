@@ -14,17 +14,21 @@ import re
 from argparse import ArgumentParser
 from http.cookiejar import CookieJar
 import signal
+import itertools
 
 API_KEY_FILE = "./api_key"
 
 parser = ArgumentParser()
-parser.add_argument("-n", dest="host", metavar="hostname", required=True,
+parser.add_argument("-n", dest="host", metavar="hostname",
+                    required=True,
                     help="Airlock Gateway hostname")
 group_action = parser.add_mutually_exclusive_group(required=True)
 group_action.add_argument("-a", dest="action", action="store_const",
                           const="add", help="Add IP list")
 group_action.add_argument("-r", dest="action", action="store_const",
                           const="remove", help="Remove IP list")
+group_action.add_argument("-s", dest="action", action="store_const",
+                          const="show", help="Show IP list usage")
 group_sel = parser.add_mutually_exclusive_group(required=True)
 group_sel.add_argument("-m", dest="mapping_selector_pattern",
                        metavar="pattern",
@@ -38,14 +42,14 @@ group_type.add_argument("-w", dest="blacklist", action="store_false",
                         help="Modify whitelist")
 group_type.add_argument("-b", dest="blacklist", action="store_true",
                         help="Modify blacklist")
-parser.add_argument("-o", dest="log_only", required=False,
+parser.add_argument("-o", dest="log_only",
                     choices=['true', 'false'],
                     help="Enable/disable 'log only' on all affected mappings "
                     "for the specified IP list type")
 parser.add_argument("-f", dest="confirm", action="store_false",
                     help="Force, no confirmation needed")
 parser.add_argument("-k", dest="api_key", metavar="api_key",
-                    help=f"API key if not specified in {API_KEY_FILE}", required=False)
+                    help=f"API key if not specified in {API_KEY_FILE}")
 args = parser.parse_args()
 sys.tracebacklimit = 0
 
@@ -107,16 +111,16 @@ send_request("POST", "configuration/configurations/{}/load"
                      .format(resp['data'][0]['id']))
 
 # get all mappings
-resp = json.loads(send_request("GET", "configuration/mappings"))
+resp_all_mappings = json.loads(send_request("GET", "configuration/mappings"))
 
 # filter mappings
 mapping_ids = (
-    [x['id'] for x in resp['data']
+    [x['id'] for x in resp_all_mappings['data']
         if(re.search(args.mapping_selector_pattern, x['attributes']['name']))]
     if args.mapping_selector_pattern
-    else [x['id'] for x in resp['data']
+    else [x['id'] for x in resp_all_mappings['data']
           if(args.mapping_selector_label in x['attributes']['labels'])])
-mapping_names = [x['attributes']['name'] for x in resp['data']
+mapping_names = [x['attributes']['name'] for x in resp_all_mappings['data']
                  if(x['id'] in mapping_ids)]
 
 if not mapping_ids:
@@ -135,11 +139,30 @@ if args.iplist:
     if not ip_list_ids:
         terminate_and_exit("IP list matching '{}' not found".format(args.iplist))
 
-# patch the config
+list_type = "blacklists" if args.blacklist else "whitelists"
+
+# show ip list usage and terminate
+if args.action == "show":
+    for mapping in resp_all_mappings['data']:
+        print(mapping['attributes']['ipRules']['ipAddressWhitelists']['logOnly'])
+    resp = json.loads(send_request("GET", "/configuration/ip-address-lists"))
+    for r in resp['data']:
+        print(r['relationships']['ip-address-whitelists'])
+    #for mapping in list(itertools.product(mapping_ids, mapping_names)):
+    #    print(mapping[1])
+    #    resp = send_request("GET",
+    #            "configuration/mappings/{}/relationships/ip-address-{}"
+    #            .format(mapping[1], list_type))
+    #    print(resp)
+    #for ip_list in list(itertools.product(ip_list_ids, ip_list_names)):
+    #    print(ip_list[1] + "\t")
+
+    terminate_and_exit(0)
+
+
 for mapping_id in mapping_ids:
     resp = json.loads(send_request("GET", "/configuration/mappings/{}"
                                           .format(mapping_id)))
-    list_type = "blacklists" if args.blacklist else "whitelists"
 
     selected_ip_list = []
     for ip_list_id in ip_list_ids:
