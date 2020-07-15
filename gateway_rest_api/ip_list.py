@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 # coding=utf-8
 """
-Version 1.1
+Version 1.2
 Script to manage IP list usages
+All actions operate on the newest saved or active configuration.
 """
 
 from urllib import request
@@ -56,23 +57,23 @@ sys.tracebacklimit = 0
 if args.log_only and args.iplist is None:
     parser.error("-i or -o (or both) required")
 
-TARGET_GATEWAY = "https://{}".format(args.host)
+TARGET_GATEWAY = f'https://{args.host}'
 
 try:
-    api_key = args.api_key if args.api_key else open(API_KEY_FILE, 'r').read().strip()
+    api_key = (args.api_key if args.api_key
+               else open(API_KEY_FILE, 'r').read().strip())
 except IOError:
-    print("Please write the Airlock Gateway API key into file {}"
-          .format(API_KEY_FILE))
+    print(f'Please write the Airlock Gateway API key into file {API_KEY_FILE}')
     sys.exit(-1)
 
 DEFAULT_HEADERS = {"Accept": "application/json",
                    "Content-Type": "application/json",
-                   "Authorization": "Bearer {}".format(api_key)}
+                   "Authorization": f'Bearer {api_key}'}
 
 # we need a cookie store
 opener = request.build_opener(request.HTTPCookieProcessor(CookieJar()))
 
-# for invalid SSL certs on the management interface
+# ignore invalid SSL cert on the management interface
 if (not os.environ.get('PYTHONHTTPSVERIFY', '') and
         getattr(ssl, '_create_unverified_context', None)):
     ssl._create_default_https_context = ssl._create_unverified_context
@@ -92,128 +93,167 @@ def terminate_and_exit(text):
     sys.exit(text)
 
 
+# signal handler
+def register_cleanup_handler():
+    def cleanup(signum, frame):
+        terminate_and_exit("Terminate session")
+
+    for sig in (signal.SIGABRT, signal.SIGILL, signal.SIGINT, signal.SIGSEGV,
+                signal.SIGTERM):
+        signal.signal(sig, cleanup)
+
+
+def load_last_config():
+    resp = json.loads(send_request("GET", "configuration/configurations"))
+    send_request("POST", 'configuration/configurations/'
+                         f"{resp['data'][0]['id']}/load")
+
+
+def get_all_mappings():
+    resp = json.loads(send_request("GET", "configuration/mappings"))['data']
+    return sorted(resp, key = lambda x: x['attributes']['name'])
+
+
+def get_mappings():
+    # filter mappings
+    return ([
+        {'id': x['id'],
+         'name': x['attributes']['name'],
+         'ip_rules': x['attributes']['ipRules']}
+        for x in get_all_mappings() if (
+            args.mapping_selector_pattern and
+            re.search(args.mapping_selector_pattern, x['attributes']['name']) or
+            args.mapping_selector_label in x['attributes']['labels']
+            )
+        ])
+
+
+def get_ip_lists():
+    # get all ip lists
+    resp = json.loads(send_request("GET", "configuration/ip-address-lists"))
+
+    ip_lists = []
+    if args.iplist:
+        ip_lists = ([
+            {'id': x['id'], 'name': x['attributes']['name']}
+            for x in resp['data'] if (
+                re.search(args.iplist, x['attributes']['name'])
+            )
+        ])
+    return ip_lists
+
+
+def show_usages(mappings, list_type, ip_lists):
+    dump = {}
+    for mapping in mappings:
+        dump[mapping['id']] = {
+            'name': mapping['name'],
+            'log_only': mapping['ip_rules'][f'ipAddress{list_type.title()}']['logOnly'],
+            'ip_lists': []
+            }
+
+    for r in json.loads(send_request("GET", "/configuration/ip-address-lists"))['data']:
+        key_name = f'ip-address-{list_type}'
+        if 'relationships' in r and key_name in r['relationships']:
+            for m in r['relationships'][key_name]['data']:
+                if m['id'] in dump:
+                    dump[m['id']]['ip_lists'].append(r['id'])
+
+    for mapping_infos in dump.values():
+        print(mapping_infos['name'])
+        print(f"\tlog-only: {mapping_infos['log_only']}")
+        print('\tIP {}: {}'.format(list_type, ', '.join(
+            list(ipl['name'] for ipl in ip_lists if ipl['id'] == mipl)[0]
+            for mipl in mapping_infos['ip_lists'])))
+
+
+def patch_config(mappings, list_type, ip_lists):
+    for mapping in mappings:
+        selected_ip_list = []
+        for ip_list in ip_lists:
+            selected_ip_list.append({"id": ip_list['id'],
+                                    "type": "ip-address-list"})
+
+        data = {"data": selected_ip_list}
+        method = "PATCH" if args.action == "add" else "DELETE"
+        send_request(method,
+                    "configuration/mappings/{}/relationships/ip-address-{}"
+                    .format(mapping['id'], list_type), json.dumps(data))
+        if args.log_only:
+            data = {
+                "data": {
+                    "attributes": {
+                        "ipRules": {
+                            f"ipAddress{list_type.title()}": {
+                                "logOnly": True if args.log_only == "true"
+                                else False
+                            }
+                        }
+                    },
+                    "id": mapping['id'],
+                    "type": "mapping"
+                }
+            }
+            send_request("PATCH", f"configuration/mappings/{mapping['id']}",
+                         json.dumps(data))
+
+
+def create_change_info(mappings, list_type, ip_lists):
+    change_info = ''
+    if args.iplist:
+        change_info += '{} {} group(s) "{}"'\
+                       .format(args.action,
+                               list_type[:-1],
+                               ', '.join(x['name'] for x in ip_lists))
+        if args.log_only: change_info += ' and '
+    if args.log_only:
+        change_info += f'set log_only to "{args.log_only}"'
+    change_info += ' for the following mapping(s): \n\t{}'\
+                   .format('\n\t'.join(sorted(x['name'] for x in mappings)))
+    return change_info
+
+
+def confirm(change_info):
+    if not args.confirm:
+        return True
+    print(change_info)
+    if input('\nContinue to save the config? [y/n] ') == 'y':
+        return True
+    print("Nothing changed")
+    return False
+
+
+def save_config(change_info):
+    data = {"comment": "REST: " + change_info.replace('\n\t', ', ').replace(': ,', ':')}
+
+    # save config
+    send_request("POST", "configuration/configurations/save", json.dumps(data))
+    print(f"Config saved with comment: {data['comment']}")
+
+
 # create session
 send_request("POST", "session/create")
+register_cleanup_handler()
 
-
-# signal handler
-def cleanup(signum, frame):
-    terminate_and_exit("Terminate session")
-
-
-for sig in (signal.SIGABRT, signal.SIGILL, signal.SIGINT, signal.SIGSEGV,
-            signal.SIGTERM):
-    signal.signal(sig, cleanup)
-
-# get last config (active or saved)
-resp = json.loads(send_request("GET", "configuration/configurations"))
-send_request("POST", "configuration/configurations/{}/load"
-                     .format(resp['data'][0]['id']))
-
-# get all mappings
-resp_all_mappings = json.loads(send_request("GET", "configuration/mappings"))
+# load last config (active or saved)
+load_last_config()
 
 # filter mappings
-mapping_ids = (
-    [x['id'] for x in resp_all_mappings['data']
-        if(re.search(args.mapping_selector_pattern, x['attributes']['name']))]
-    if args.mapping_selector_pattern
-    else [x['id'] for x in resp_all_mappings['data']
-          if(args.mapping_selector_label in x['attributes']['labels'])])
-mapping_names = [x['attributes']['name'] for x in resp_all_mappings['data']
-                 if(x['id'] in mapping_ids)]
+mappings = get_mappings()
+if not mappings: terminate_and_exit("No mapping found - exit")
 
-if not mapping_ids:
-    terminate_and_exit("No mapping found - exit")
-
-# get all ip lists
-resp = json.loads(send_request("GET", "configuration/ip-address-lists"))
-
-ip_list_ids = []
 # filter ip lists
-if args.iplist:
-    ip_list_ids = [x['id'] for x in resp['data']
-                if(re.search(args.iplist, x['attributes']['name']))]
-    ip_list_names = [x['attributes']['name'] for x in resp['data']
-                    if(x['id'] in ip_list_ids)]
-    if not ip_list_ids:
-        terminate_and_exit("IP list matching '{}' not found".format(args.iplist))
+ip_lists = get_ip_lists()
+if not ip_lists: terminate_and_exit("No IP list found")
 
 list_type = "blacklists" if args.blacklist else "whitelists"
 
-# show ip list usage and terminate
 if args.action == "show":
-    for mapping in resp_all_mappings['data']:
-        print(mapping['attributes']['ipRules']['ipAddressWhitelists']['logOnly'])
-    resp = json.loads(send_request("GET", "/configuration/ip-address-lists"))
-    for r in resp['data']:
-        print(r['relationships']['ip-address-whitelists'])
-    #for mapping in list(itertools.product(mapping_ids, mapping_names)):
-    #    print(mapping[1])
-    #    resp = send_request("GET",
-    #            "configuration/mappings/{}/relationships/ip-address-{}"
-    #            .format(mapping[1], list_type))
-    #    print(resp)
-    #for ip_list in list(itertools.product(ip_list_ids, ip_list_names)):
-    #    print(ip_list[1] + "\t")
-
-    terminate_and_exit(0)
-
-
-for mapping_id in mapping_ids:
-    resp = json.loads(send_request("GET", "/configuration/mappings/{}"
-                                          .format(mapping_id)))
-
-    selected_ip_list = []
-    for ip_list_id in ip_list_ids:
-        selected_ip_list.append({"id": ip_list_id, "type": "ip-address-list"})
-
-    data = {"data": selected_ip_list}
-    method = "PATCH" if args.action == "add" else "DELETE"
-    send_request(method,
-                 "configuration/mappings/{}/relationships/ip-address-{}"
-                 .format(mapping_id, list_type), json.dumps(data))
-    if args.log_only:
-        data = {
-            "data": {
-                "attributes": {
-                    "ipRules": {
-                        "ipAddress{}".format(list_type.title()): {
-                            "logOnly": True if args.log_only == "true"
-                            else False
-                        }
-                    }
-                },
-                "id": mapping_id,
-                "type": "mapping"
-            }
-        }
-        send_request("PATCH", "configuration/mappings/{}"
-                     .format(mapping_id), json.dumps(data))
-
-change_info = ''
-if args.iplist:
-    change_info += '{} {} group(s) "{}"'.format(args.action, list_type[:-1],
-                  ', '.join(ip_list_names))
-    if args.log_only:
-        change_info += ' and '
-if args.log_only:
-    change_info += 'set log_only to "{}"'.format(args.log_only)
-change_info += ' for the following mapping(s): \n{}'.format('\n\t'.join(sorted(mapping_names)))
-if args.confirm:
-    print(change_info)
-    if input('\nContinue to save the config? [y/n] ') != 'y':
-        print("Nothing changed")
-        terminate_and_exit(0)
-
-data = {"comment": "REST: " + change_info.replace('\n','').replace('\t',',')}
-
-# save config
-send_request("POST", "configuration/configurations/save", json.dumps(data))
-print('Config saved with comment: {}'.format(data['comment']))
-
-# activate config without failover activation!
-# send_request("POST", "configuration/configurations/activate",
-#              json.dumps(data))
+    show_usages(mappings, list_type, ip_lists)
+else:
+    patch_config(mappings, list_type, ip_lists)
+    change_info = create_change_info(mappings, list_type, ip_lists)
+    confirm(change_info) or terminate_and_exit(0)
+    save_config(change_info)
 
 terminate_and_exit(0)
