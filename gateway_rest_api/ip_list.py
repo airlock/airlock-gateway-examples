@@ -128,22 +128,25 @@ def get_mappings():
         ])
 
 
-def get_ip_lists():
+def get_all_ip_lists():
     # get all ip lists
     resp = json.loads(send_request("GET", "configuration/ip-address-lists"))
+    return resp['data']
 
+
+def get_ip_lists():
     ip_lists = []
     if args.iplist:
         ip_lists = ([
             {'id': x['id'], 'name': x['attributes']['name']}
-            for x in resp['data'] if (
+            for x in get_all_ip_lists() if (
                 re.search(args.iplist, x['attributes']['name'])
             )
         ])
     return ip_lists
 
 
-def show_usages(mappings, list_type, ip_lists):
+def show_usages(mappings, list_type):
     dump = {}
     for mapping in mappings:
         dump[mapping['id']] = {
@@ -159,12 +162,13 @@ def show_usages(mappings, list_type, ip_lists):
                 if m['id'] in dump:
                     dump[m['id']]['ip_lists'].append(r['id'])
 
+    all_ip_lists = get_all_ip_lists()
     for mapping_infos in dump.values():
         print(mapping_infos['name'])
         print(f"\tlog-only: {mapping_infos['log_only']}")
         print('\tIP {}: {}'.format(list_type, ', '.join(
-            list(ipl['name'] for ipl in ip_lists if ipl['id'] == mipl)[0]
-            for mipl in mapping_infos['ip_lists'])))
+            i['attributes']['name'] for i in all_ip_lists if
+            i['id'] in mapping_infos['ip_lists'])))
 
 
 def patch_config(mappings, list_type, ip_lists):
@@ -244,12 +248,13 @@ if not mappings: terminate_and_exit("No mapping found - exit")
 
 # filter ip lists
 ip_lists = get_ip_lists()
-if not ip_lists: terminate_and_exit("No IP list found")
+if args.action != "show" and not ip_lists:
+    terminate_and_exit("No IP list found")
 
 list_type = "blacklists" if args.blacklist else "whitelists"
 
 if args.action == "show":
-    show_usages(mappings, list_type, ip_lists)
+    show_usages(mappings, list_type)
 else:
     patch_config(mappings, list_type, ip_lists)
     change_info = create_change_info(mappings, list_type, ip_lists)
