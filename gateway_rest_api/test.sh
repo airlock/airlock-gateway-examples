@@ -11,18 +11,18 @@ function header {
 	read
 }
 
-header 'Remove all blacklist and whitelist usages (whitelist call forced)'
+header 'remove all blacklist and whitelist usages (whitelist call forced)'
 ./ip_list.py -n $HOST -r -m "." -i "." -b
 ./ip_list.py -n $HOST -r -m "." -i "." -w -f
 
-header 'Remove all log-only flags (whitelist call forced)'
+header 'remove all log-only flags (whitelist call forced)'
 ./ip_list.py -n $HOST -o disable -m "." -b -f
 ./ip_list.py -n $HOST -o disable -m "." -w
 
 header 'add IP List "aaa" to blacklist of host "aldea" on all mapping containing the string "basic"'
 ./ip_list.py -n $HOST -a -m "basic" -i "^aaa" -b
 
-header 'sho all blacklist and whitelist usages'
+header 'show all blacklist and whitelist usages'
 ./ip_list.py -n $HOST -s -m "." -b
 ./ip_list.py -n $HOST -s -m "." -w
 
