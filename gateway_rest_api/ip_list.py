@@ -30,6 +30,10 @@ group_action.add_argument("-r", dest="action", action="store_const",
                           const="remove", help="Remove IP list")
 group_action.add_argument("-s", dest="action", action="store_const",
                           const="show", help="Show IP list usage")
+group_action.add_argument("-o", dest="action",
+                          choices=['enable', 'disable'],
+                          help="Enable/disable 'log only' on all affected mappings "
+                          "for the specified IP list type")
 group_sel = parser.add_mutually_exclusive_group(required=True)
 group_sel.add_argument("-m", dest="mapping_selector_pattern",
                        metavar="pattern",
@@ -43,10 +47,6 @@ group_type.add_argument("-w", dest="blacklist", action="store_false",
                         help="Modify whitelist")
 group_type.add_argument("-b", dest="blacklist", action="store_true",
                         help="Modify blacklist")
-parser.add_argument("-o", dest="log_only",
-                    choices=['true', 'false'],
-                    help="Enable/disable 'log only' on all affected mappings "
-                    "for the specified IP list type")
 parser.add_argument("-f", dest="confirm", action="store_false",
                     help="Force, no confirmation needed")
 parser.add_argument("-k", dest="api_key", metavar="api_key",
@@ -54,8 +54,8 @@ parser.add_argument("-k", dest="api_key", metavar="api_key",
 args = parser.parse_args()
 sys.tracebacklimit = 0
 
-if args.log_only and args.iplist is None:
-    parser.error("-i or -o (or both) required")
+if not args.iplist and args.action in ['add', 'remove']:
+    parser.error("IP list (-i) required for 'add' or 'remove' action")
 
 TARGET_GATEWAY = f'https://{args.host}'
 
@@ -171,7 +171,26 @@ def show_usages(mappings, list_type):
             i['id'] in mapping_infos['ip_lists'])))
 
 
-def patch_config(mappings, list_type, ip_lists):
+def patch_log_only(mappings, list_type):
+    for mapping in mappings:
+        data = {
+            "data": {
+                "attributes": {
+                    "ipRules": {
+                        f"ipAddress{list_type.title()}": {
+                            "logOnly": True if args.action == "enable"
+                            else False
+                        }
+                    }
+                },
+                "id": mapping['id'],
+                "type": "mapping"
+            }
+        }
+        send_request("PATCH", f"configuration/mappings/{mapping['id']}",
+                    json.dumps(data))
+
+def patch_usage(mappings, list_type, ip_lists):
     for mapping in mappings:
         selected_ip_list = []
         for ip_list in ip_lists:
@@ -179,39 +198,22 @@ def patch_config(mappings, list_type, ip_lists):
                                     "type": "ip-address-list"})
 
         data = {"data": selected_ip_list}
-        method = "PATCH" if args.action == "add" else "DELETE"
+        method = "PATCH" if args.action == 'add' else "DELETE"
         send_request(method,
                     "configuration/mappings/{}/relationships/ip-address-{}"
                     .format(mapping['id'], list_type), json.dumps(data))
-        if args.log_only:
-            data = {
-                "data": {
-                    "attributes": {
-                        "ipRules": {
-                            f"ipAddress{list_type.title()}": {
-                                "logOnly": True if args.log_only == "true"
-                                else False
-                            }
-                        }
-                    },
-                    "id": mapping['id'],
-                    "type": "mapping"
-                }
-            }
-            send_request("PATCH", f"configuration/mappings/{mapping['id']}",
-                         json.dumps(data))
 
 
 def create_change_info(mappings, list_type, ip_lists):
     change_info = ''
-    if args.iplist:
+    if args.action in ["add", "remove"]: 
         change_info += '{} {} group(s) "{}"'\
                        .format(args.action,
                                list_type[:-1],
                                ', '.join(x['name'] for x in ip_lists))
-        if args.log_only: change_info += ' and '
-    if args.log_only:
-        change_info += f'set log_only to "{args.log_only}"'
+    elif args.action in ['enable','disable']:
+        change_info += f'set log_only for "{list_type}" to "{args.action}"'
+    
     change_info += ' for the following mapping(s): \n\t{}'\
                    .format('\n\t'.join(sorted(x['name'] for x in mappings)))
     return change_info
@@ -247,16 +249,21 @@ mappings = get_mappings()
 if not mappings: terminate_and_exit("No mapping found - exit")
 
 # filter ip lists
-ip_lists = get_ip_lists()
-if args.action != "show" and not ip_lists:
-    terminate_and_exit("No IP list found")
+ip_lists = []
+if args.iplist:
+    ip_lists = get_ip_lists()
+    if not ip_lists:
+        terminate_and_exit("No IP list found")
 
 list_type = "blacklists" if args.blacklist else "whitelists"
 
 if args.action == "show":
     show_usages(mappings, list_type)
 else:
-    patch_config(mappings, list_type, ip_lists)
+    if args.action in ['enable','disable']:
+        patch_log_only(mappings, list_type)
+    if args.action in ['add', 'remove']:
+        patch_usage(mappings, list_type, ip_lists)
     change_info = create_change_info(mappings, list_type, ip_lists)
     confirm(change_info) or terminate_and_exit(0)
     save_config(change_info)
