@@ -17,7 +17,7 @@ from http.cookiejar import CookieJar
 import signal
 import itertools
 
-API_KEY_FILE = "./api_key"
+DEFAULT_API_KEY_FILE = "./api_key"
 
 parser = ArgumentParser()
 parser.add_argument("-n", dest="host", metavar="hostname",
@@ -32,8 +32,8 @@ group_action.add_argument("-s", dest="action", action="store_const",
                           const="show", help="Show IP list usage")
 group_action.add_argument("-o", dest="action",
                           choices=['enable', 'disable'],
-                          help="Enable/disable 'log only' on all affected mappings "
-                          "for the specified IP list type")
+                          help="Enable/disable 'log only' on all affected "
+                          "mappings for the specified IP list type")
 group_sel = parser.add_mutually_exclusive_group(required=True)
 group_sel.add_argument("-m", dest="mapping_selector_pattern",
                        metavar="pattern",
@@ -49,8 +49,10 @@ group_type.add_argument("-b", dest="blacklist", action="store_true",
                         help="Modify blacklist")
 parser.add_argument("-f", dest="confirm", action="store_false",
                     help="Force, no confirmation needed")
-parser.add_argument("-k", dest="api_key", metavar="api_key",
-                    help=f"API key if not specified in {API_KEY_FILE}")
+parser.add_argument("-k", dest="api_key_file", metavar="api_key_file",
+                    default=DEFAULT_API_KEY_FILE,
+                    help="Path to API key file "
+                    f"(default {DEFAULT_API_KEY_FILE})")
 args = parser.parse_args()
 sys.tracebacklimit = 0
 
@@ -60,10 +62,9 @@ if not args.iplist and args.action in ['add', 'remove']:
 TARGET_GATEWAY = f'https://{args.host}'
 
 try:
-    api_key = (args.api_key if args.api_key
-               else open(API_KEY_FILE, 'r').read().strip())
-except IOError:
-    print(f'Please write the Airlock Gateway API key into file {API_KEY_FILE}')
+    api_key = open(args.api_key_file, 'r').read().strip()
+except (IOError, FileNotFoundError) as error:
+    print(f'Can not read API key from {args.api_key_file}')
     sys.exit(-1)
 
 DEFAULT_HEADERS = {"Accept": "application/json",
@@ -111,7 +112,7 @@ def load_last_config():
 
 def get_all_mappings():
     resp = json.loads(send_request("GET", "configuration/mappings"))['data']
-    return sorted(resp, key = lambda x: x['attributes']['name'])
+    return sorted(resp, key=lambda x: x['attributes']['name'])
 
 
 def get_mappings():
@@ -122,7 +123,8 @@ def get_mappings():
          'ip_rules': x['attributes']['ipRules']}
         for x in get_all_mappings() if (
             args.mapping_selector_pattern and
-            re.search(args.mapping_selector_pattern, x['attributes']['name']) or
+            re.search(args.mapping_selector_pattern,
+                      x['attributes']['name']) or
             args.mapping_selector_label in x['attributes']['labels']
             )
         ])
@@ -151,11 +153,14 @@ def show_usages(mappings, list_type):
     for mapping in mappings:
         dump[mapping['id']] = {
             'name': mapping['name'],
-            'log_only': mapping['ip_rules'][f'ipAddress{list_type.title()}']['logOnly'],
+            'log_only': mapping['ip_rules']
+                               [f'ipAddress{list_type.title()}']
+                               ['logOnly'],
             'ip_lists': []
             }
 
-    for r in json.loads(send_request("GET", "/configuration/ip-address-lists"))['data']:
+    resp_al = send_request("GET", "/configuration/ip-address-lists")
+    for r in json.loads(resp_al)['data']:
         key_name = f'ip-address-{list_type}'
         if 'relationships' in r and key_name in r['relationships']:
             for m in r['relationships'][key_name]['data']:
@@ -188,7 +193,8 @@ def patch_log_only(mappings, list_type):
             }
         }
         send_request("PATCH", f"configuration/mappings/{mapping['id']}",
-                    json.dumps(data))
+                     json.dumps(data))
+
 
 def patch_usage(mappings, list_type, ip_lists):
     for mapping in mappings:
@@ -200,20 +206,20 @@ def patch_usage(mappings, list_type, ip_lists):
         data = {"data": selected_ip_list}
         method = "PATCH" if args.action == 'add' else "DELETE"
         send_request(method,
-                    "configuration/mappings/{}/relationships/ip-address-{}"
-                    .format(mapping['id'], list_type), json.dumps(data))
+                     "configuration/mappings/{}/relationships/ip-address-{}"
+                     .format(mapping['id'], list_type), json.dumps(data))
 
 
 def create_change_info(mappings, list_type, ip_lists):
     change_info = ''
-    if args.action in ["add", "remove"]: 
+    if args.action in ["add", "remove"]:
         change_info += '{} {} group(s) "{}"'\
                        .format(args.action,
                                list_type[:-1],
                                ', '.join(x['name'] for x in ip_lists))
-    elif args.action in ['enable','disable']:
+    elif args.action in ['enable', 'disable']:
         change_info += f'set log_only for "{list_type}" to "{args.action}"'
-    
+
     change_info += ' for the following mapping(s): \n\t{}'\
                    .format('\n\t'.join(sorted(x['name'] for x in mappings)))
     return change_info
@@ -230,7 +236,8 @@ def confirm(change_info):
 
 
 def save_config(change_info):
-    data = {"comment": "REST: " + change_info.replace('\n\t', ', ').replace(': ,', ':')}
+    data = {"comment": "REST: " + change_info.replace('\n\t', ', ')
+                                             .replace(': ,', ':')}
 
     # save config
     send_request("POST", "configuration/configurations/save", json.dumps(data))
@@ -246,7 +253,8 @@ load_last_config()
 
 # filter mappings
 mappings = get_mappings()
-if not mappings: terminate_and_exit("No mapping found - exit")
+if not mappings:
+    terminate_and_exit("No mapping found - exit")
 
 # filter ip lists
 ip_lists = []
@@ -260,7 +268,7 @@ list_type = "blacklists" if args.blacklist else "whitelists"
 if args.action == "show":
     show_usages(mappings, list_type)
 else:
-    if args.action in ['enable','disable']:
+    if args.action in ['enable', 'disable']:
         patch_log_only(mappings, list_type)
     if args.action in ['add', 'remove']:
         patch_usage(mappings, list_type, ip_lists)
