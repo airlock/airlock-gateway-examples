@@ -36,6 +36,9 @@ header 'show all blacklist and whitelist usages'
 ./ip_list.py -n $HOST -s -m "." -b
 ./ip_list.py -n $HOST -s -m "." -w
 
+header 'remove all allow rule ip pattern'
+./ip_list.py -n $HOST -d -m "." -f
+
 header 'error mapping not found - with label '
 ./ip_list.py -n $HOST -a -o enable -l "foo" -w
 
@@ -44,3 +47,4 @@ header 'error mapping not found - with mapping pattern'
 
 header 'error ip list not found '
 ./ip_list.py -n $HOST -a -m "." -i "foo" -w
+
