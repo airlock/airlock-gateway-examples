@@ -2,7 +2,7 @@
 # coding=utf-8
 """
 version 1.0
-Script to activate enabe deny rule group on a WAF mapping
+Script to enable deny rule group on all WAF mappings
 """
 
 import urllib2
