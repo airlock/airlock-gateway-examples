@@ -3,6 +3,9 @@
 """
 version 1.0
 Adds JSON parameter name exception for Deny Rule TI_001d
+
+Save a valid REST API key into the file "api_key" in the
+current directory.
 """
 
 import urllib2
