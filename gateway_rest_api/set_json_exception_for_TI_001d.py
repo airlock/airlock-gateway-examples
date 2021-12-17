@@ -19,6 +19,10 @@ from signal import *
 
 API_KEY_FILE = "./api_key"
 
+# this exception pattern will be altered by the REST backend
+# with ^...$ prefix/suffix before it is written to the config
+PATTERN = '(?!.*\${)\#json\#.*'
+
 parser = ArgumentParser(add_help=True)
 parser.add_argument("-n", dest="host", metavar="<airlock host>",
                     required=True,
@@ -108,7 +112,7 @@ for mapping_id in mapping_ids:
         "data": {
             "type": "deny-rule-exception",
             "attributes": {
-                "parameternamepattern": '(?!.*\${)\#json\#.*'
+                "parameternamepattern": PATTERN
             }
         }
     }
