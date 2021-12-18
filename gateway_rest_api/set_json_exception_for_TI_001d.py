@@ -1,7 +1,7 @@
 #!/usr/bin/env python2
 # coding=utf-8
 """
-version 1.0
+version 1.1
 Adds JSON parameter name exception for Deny Rule TI_001d
 
 Save a valid REST API key into the file "api_key" in the
@@ -13,6 +13,7 @@ import ssl
 import json
 import os
 import sys
+import re
 from argparse import ArgumentParser
 from cookielib import CookieJar
 from signal import *
@@ -23,6 +24,7 @@ API_KEY_FILE = "./api_key"
 # with ^...$ prefix/suffix before it is written to the config
 PATTERN = '(?!.*\${)\#json\#.*'
 
+
 parser = ArgumentParser(add_help=True)
 parser.add_argument("-n", dest="host", metavar="<airlock host>",
                     required=True,
@@ -32,6 +34,8 @@ group_action.add_argument("-m", dest="mapping", metavar="<mapping name>",
                             help="Logical name of the mapping")
 group_action.add_argument("-a", dest="allmappings", action='store_true',
                             help="activate exception on all mappings")
+group_action.add_argument("-p", dest="mapping_pattern", metavar="<mapping pattern>",
+                            help="activate exception on all mappings matching pattern")                         
 
 # TI_001d rule
 deny_rule_group_id = -30028
@@ -93,13 +97,25 @@ id = [x["id"] for x in resp["data"]
 send_request("POST", "configuration/configurations/{}/load".format(id))
 
 response = json.loads(send_request("GET", "configuration/mappings"))
+mapping_ids = []
+mapping_names = []
 if args.allmappings:
     # get all mappings   
     mapping_ids = [x['id'] for x in response['data']]
-else:
+elif args.mapping:
     # get mapping with correct name
     mapping_ids = [x['id'] for x in response['data']
                      if(x['attributes']['name'] == args.mapping)]
+elif args.mapping_pattern:
+    # get mappings matching pattern
+    for x in response['data']:
+        if(re.match(args.mapping_pattern, x['attributes']['name'])):
+            mapping_names.append(x['attributes']['name'])
+            mapping_ids.append(x['id'])
+
+    print("Modifying mappings: {}".format(",".join(mapping_names)))
+    if (raw_input("Are you sure? (y/n): ") != "y"):
+        terminate_and_exit(0)
 
 if not mapping_ids:
     terminate_and_exit("Mapping '{}' not found".format(args.mapping))
