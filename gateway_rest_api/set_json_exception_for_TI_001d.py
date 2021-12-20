@@ -31,11 +31,11 @@ parser.add_argument("-n", dest="host", metavar="<airlock host>",
                     help="Airlock Gateway hostname")
 group_action = parser.add_mutually_exclusive_group(required=True)
 group_action.add_argument("-m", dest="mapping", metavar="<mapping name>",
-                            help="Logical name of the mapping")
+                            help="activate exception on a single mapping")
 group_action.add_argument("-a", dest="allmappings", action='store_true',
                             help="activate exception on all mappings")
 group_action.add_argument("-p", dest="mapping_pattern", metavar="<mapping pattern>",
-                            help="activate exception on all mappings matching pattern")                         
+                            help="activate exception on mappings matching pattern")
 
 # TI_001d rule
 deny_rule_group_id = -30028
