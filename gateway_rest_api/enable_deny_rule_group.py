@@ -46,7 +46,7 @@ if (not os.environ.get('PYTHONHTTPSVERIFY', '') and
 
 
 # method to send REST calls
-def send_request(method, path, body={}):
+def send_request(method, path, body=''):
     req = urllib2.Request(TARGET_WAF + "/airlock/rest/" + path,
                           body, DEFAULT_HEADERS)
     req.get_method = lambda: method
