@@ -1,7 +1,10 @@
 #!/bin/bash
 
-OPTIND=1  # Reset in case getopts has been used previously in the shell.
+# Version 1.0
+# Queries Airlock Gateway XML config for Deny Rule status
+# Tested with Airlock Gateway 7.7
 
+OPTIND=1
 
 file=""
 rule=""
@@ -9,11 +12,12 @@ enabled="true"
 
 function usage()
 {
-	echo "Usage:"
-	echo "$0 -f <config_zip_file> -r <RULE_SHORTNAME> [-disabled]"
-    echo "Display all mapping names with Deny Rule <RULE_SHORTNAME>"
-    echo "enabled (by default, you can change this using '-d' flag)"
-    echo "in the configuration file <config_zip_file>"
+	cat <<EOF
+Usage: $0 -f <config_zip_file> -r <RULE_SHORTNAME> [-d]
+	  -f: Airlock Gateway config XML
+  -r: Deny Rule short name
+  -d: show disabled rules
+EOF
 }
 
 
@@ -37,6 +41,8 @@ if [ -z "${file}" ] || [ -z "${rule}" ]; then
 fi
 
 tmp=$(mktemp -d)
+trap "rm -rf ${tmp}" EXIT
+
 unzip "${file}" -d $tmp/ > /dev/null
 cat $tmp/alec_full.xml | tr -d " \n\r\t" > $tmp/alec_no_spaces.xml
 
@@ -59,21 +65,19 @@ pattern4="<MappingId=\"(\d+)\".*?<Name>[^<]+</Name>|<DenyRuleGroupId>${deny_rule
 # Pattern 5 checks if a mapping has both the Deny Rule Group as well as the Deny Rule enabled, and outputs its name if that is the case
 pattern5="(?<=<Name>)[^<]+(?=</Name><DenyRuleGroupId>${deny_rule_group_id}</DenyRuleGroupId><EnabledLocked=\"(?:false|true)\">true</Enabled><DenyRuleId>)"
 
-
-active_mappings=$(cat ${tmp}/alec_no_spaces.xml | grep -Po "${pattern4}" | tr -d " \n\r\t" | grep -Po "${pattern5}")
+active_mappings=$(grep -Po "${pattern4}" ${tmp}/alec_no_spaces.xml | tr -d " \n\r\t" | grep -Po "${pattern5}")
 
 if [ $enabled = "true" ]
 then
     echo 
     echo "Mappings with Deny Rule ${rule} active: "
-    echo $active_mappings
+    echo "$active_mappings"
 else
     pattern6="<MappingId=\"(\d+)\".*?<Name>.*?</Name>"
     pattern7="(?<=<Name>).*?(?=</Name>)"
     pattern8=$(echo "${active_mappings}" | sed -z 's/\n/|/g;s/|$/\n/')
     echo 
     echo "Mappings with Deny Rule ${rule} not active: "
-    not_active_mappings=$(cat ${tmp}/alec_no_spaces.xml | grep -Po "${pattern6}" | tr -d " \n\r\t" | grep -Po "${pattern7}" | grep -Pv "${pattern8}")
-    echo $not_active_mappings
+    not_active_mappings=$(grep -Po "${pattern6}" ${tmp}/alec_no_spaces.xml | tr -d " \n\r\t" | grep -Po "${pattern7}" | grep -Pv "${pattern8}")
+    echo "$not_active_mappings"
 fi
-rm -rf $tmp
