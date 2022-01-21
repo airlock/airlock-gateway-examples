@@ -14,7 +14,7 @@ function usage()
 {
 	cat <<EOF
 Usage: $0 -f <config_zip_file> -r <RULE_SHORTNAME> [-d]
-		-f: Airlock Gateway config XML
+		-f: Airlock Gateway config zip
 		-r: Deny Rule short name
 		-d: show mappings where rule is not active
 EOF
