@@ -49,7 +49,7 @@ cat $tmp/alec_full.xml | tr -d " \n\r\t" > $tmp/alec_no_spaces.xml
 # Assumption 1: all rule names start with `default`
 # Pattern 1 finds the ID corresponding to the rule name given as argument to this script.
 pattern1="(?<=<DenyRuleId=\")-\d+(?=\"><Name>\(default${rule}\))"
-deny_rule_id=$(cat ${tmp}/alec_no_spaces.xml | grep -Po "${pattern1}")
+deny_rule_id=$(grep -Po "${pattern1}" ${tmp}/alec_no_spaces.xml)
 echo "Found Deny Rule ID: ${deny_rule_id}"
 
 # Pattern 2 is used to extract the xml part defining the wanted rule
@@ -57,7 +57,7 @@ pattern2="<DenyRuleId=\"${deny_rule_id}\">.*?</DenyRule>"
 # Assumption 2: No rule is contained in more than 1 Deny Rule Group.
 # Pattern 3 extracts the first Deny Rule Group ID in which the rule is contained 
 pattern3="(?<=<DenyRuleGroupIds><DenyRuleGroupId>)-\d+(?=</DenyRuleGroupId>)"
-deny_rule_group_id=$(cat ${tmp}/alec_no_spaces.xml | grep -Po ${pattern2} | grep -Po "${pattern3}")
+deny_rule_group_id=$(grep -Po ${pattern2} ${tmp}/alec_no_spaces.xml | grep -Po "${pattern3}")
 echo "Found Deny Rule Group ID: ${deny_rule_group_id}"
 
 # Pattern 4 is used to extract 3 things for every mapping: its name, whether the Deny Rule Group is enabled or not and whether the Deny Rule itself is enabled or not. 
@@ -71,7 +71,7 @@ if [ $enabled = "true" ]
 then
 	echo 
 	echo "Mappings with Deny Rule ${rule} active: "
-	echo "$active_mappings"
+	echo "${active_mappings}"
 else
 	# Pattern 6 in combination with pattern 7 extracts all mapping names
 	pattern6="<MappingId=\"(\d+)\".*?<Name>.*?</Name(*SKIP)>"
@@ -82,5 +82,11 @@ else
 	not_active_mappings=$(grep -Po "${pattern6}" ${tmp}/alec_no_spaces.xml | tr -d " \n\r\t" | grep -Po "${pattern7}" | grep -Pv "${pattern8}")
 	echo
 	echo "Mappings with Deny Rule ${rule} not active: "
-	echo "$not_active_mappings"
+
+	if [ -z "${pattern8}" ]
+	then
+		grep -Po "${pattern6}" ${tmp}/alec_no_spaces.xml | tr -d " \n\r\t" | grep -Po "${pattern7}"
+	else 
+		echo "${not_active_mappings}"
+	fi
 fi
