@@ -15,7 +15,7 @@ function usage()
 	cat <<EOF
 Usage: $0 -f <config_zip_file> -r <RULE_SHORTNAME> [-d]
 		-f: Airlock Gateway config XML
-		-r: Deny Rule short name
+		-r: Deny Rule short name (e.g. SQL_001a)
 		-d: show mappings where rule is not active
 EOF
 }
@@ -71,7 +71,7 @@ if [ $enabled = "true" ]
 then
 	echo 
 	echo "Mappings with Deny Rule ${rule} active: "
-	echo "$active_mappings"
+	echo "${active_mappings}"
 else
 	# Pattern 6 in combination with pattern 7 extracts all mapping names
 	pattern6="<MappingId=\"(\d+)\".*?<Name>.*?</Name(*SKIP)>"
@@ -83,10 +83,10 @@ else
 	echo
 	echo "Mappings with Deny Rule ${rule} not active: "
 
-	if [ -z $pattern8 ]
+	if [ -z "${pattern8}" ]
 	then
 		grep -Po "${pattern6}" ${tmp}/alec_no_spaces.xml | tr -d " \n\r\t" | grep -Po "${pattern7}"
 	else 
-		echo "$not_active_mappings"
+		echo "${not_active_mappings}"
 	fi
 fi
