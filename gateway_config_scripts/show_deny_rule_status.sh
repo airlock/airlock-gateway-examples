@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Version 1.0
-# Queries Airlock Gateway XML config for Deny Rule status
+# Version 1.1
+# Queries Airlock Gateway Config XML/ZIP for Deny Rule status
 # Tested with Airlock Gateway 7.7
 
 OPTIND=1
