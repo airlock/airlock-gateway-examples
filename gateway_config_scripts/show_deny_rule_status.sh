@@ -14,9 +14,9 @@ function usage()
 {
 	cat <<EOF
 Usage: $0 -f <config_zip_file> -r <RULE_SHORTNAME> [-d]
-	  -f: Airlock Gateway config XML
-  -r: Deny Rule short name
-  -d: show disabled rules
+		-f: Airlock Gateway config XML
+		-r: Deny Rule short name
+		-d: show mappings where rule is not active
 EOF
 }
 
@@ -27,9 +27,9 @@ while getopts ":f:r:d" opt; do
 			;;
 		r)  rule=${OPTARG}
 			;;
-    	d)  enabled="false"
+		d)  enabled="false"
 			;;
-        *)  usage
+		*)  usage
 			exit 1
 			;;
 	esac
@@ -69,15 +69,18 @@ active_mappings=$(grep -Po "${pattern4}" ${tmp}/alec_no_spaces.xml | tr -d " \n\
 
 if [ $enabled = "true" ]
 then
-    echo 
-    echo "Mappings with Deny Rule ${rule} active: "
-    echo "$active_mappings"
+	echo 
+	echo "Mappings with Deny Rule ${rule} active: "
+	echo "$active_mappings"
 else
-    pattern6="<MappingId=\"(\d+)\".*?<Name>.*?</Name>"
-    pattern7="(?<=<Name>).*?(?=</Name>)"
-    pattern8=$(echo "${active_mappings}" | sed -z 's/\n/|/g;s/|$/\n/')
-    echo 
-    echo "Mappings with Deny Rule ${rule} not active: "
-    not_active_mappings=$(grep -Po "${pattern6}" ${tmp}/alec_no_spaces.xml | tr -d " \n\r\t" | grep -Po "${pattern7}" | grep -Pv "${pattern8}")
-    echo "$not_active_mappings"
+	# Pattern 6 in combination with pattern 7 extracts all mapping names
+	pattern6="<MappingId=\"(\d+)\".*?<Name>.*?</Name>"
+	pattern7="(?<=<Name>).*?(?=</Name>)"
+	# Pattern 8 matches all mapping names where the rule is active.
+	pattern8=$(echo "${active_mappings}" | sed -z 's/\n/|/g;s/|$/\n/')
+	# The last grep is inverted (-v flag) so that only the mapping names where the rule is NOT active will be matched
+	not_active_mappings=$(grep -Po "${pattern6}" ${tmp}/alec_no_spaces.xml | tr -d " \n\r\t" | grep -Po "${pattern7}" | grep -Pv "${pattern8}")
+	echo
+	echo "Mappings with Deny Rule ${rule} not active: "
+	echo "$not_active_mappings"
 fi
