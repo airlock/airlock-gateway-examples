@@ -50,6 +50,12 @@ cat $tmp/alec_full.xml | tr -d " \n\r\t" > $tmp/alec_no_spaces.xml
 # Pattern 1 finds the ID corresponding to the rule name given as argument to this script.
 pattern1="(?<=<DenyRuleId=\")-\d+(?=\"><Name>\(default${rule}\))"
 deny_rule_id=$(grep -Po "${pattern1}" ${tmp}/alec_no_spaces.xml)
+if [ -z "${deny_rule_id}" ]
+then
+	echo "Deny Rule not found in config"
+	exit 1
+fi
+
 echo "Found Deny Rule ID: ${deny_rule_id}"
 
 # Pattern 2 is used to extract the xml part defining the wanted rule
