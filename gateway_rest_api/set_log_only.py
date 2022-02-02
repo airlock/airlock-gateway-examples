@@ -2,25 +2,28 @@
 # coding=utf-8
 """
 Version 1.1
-Script to activate a Rule in
-log-only mode on all specified mappings.
-All actions operate on the newest saved or active 
-configuration and will save a new configuration.
+Script to activate log-only mode on a Deny Rule on a set of mappings.
+All actions operate on the newest saved or active configuration and
+will save a new configuration.
 
-Example:
+The new configuration will NOT be activated. You have to load and activate
+it in the Configuration Center ("Configuration" - "Configuration Files").
+We suggest to use the config diff function in the GUI before activation.
 
-Activate log only for rule TI_001a on all mappings containing
-the string 'basic' on system aldea
+Script may require about 3 minutes to patch 150 mappings.
 
-./set_log_only.py -k api_key -n aldea -r -2170 -m 'basic'
+Example usage:
 
-to find out the rule id use the following shell comand 
-on airlock
+Activate log-only mode for rule TI_001a on all mappings containing one of the
+strings cust0, cust1,..., cust9 on system aldea
+
+./set_log_only.py -k api_key -n aldea -r -2170 -m 'cust[0-9]'
+
+To find out the rule id use the following shell comand on Airlock Gateway
 
 NAME=TI_001c; grep -P -B1 "\.Name=.*$NAME" /opt/airlock/mgt-agent/conf/default-patterns/denyRuleFactoryDefaults.properties | awk -F= '/Id=/ { print $2 }'
 
-Tested with:
-- Airlock Gateway 7.7
+Tested with Airlock Gateway: 7.7.1, 7.6.2, 7.5.3
 """
 
 from cgitb import enable
