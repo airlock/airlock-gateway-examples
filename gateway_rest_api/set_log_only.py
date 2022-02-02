@@ -1,11 +1,26 @@
 #!/usr/bin/env python3
 # coding=utf-8
 """
-Version 1.0
+Version 1.1
 Script to activate a Rule in
 log-only mode on all specified mappings.
 All actions operate on the newest saved or active 
 configuration and will save a new configuration.
+
+Example:
+
+Activate log only for rule TI_001a on all mappings containing
+the string 'basic' on system aldea
+
+./set_log_only.py -k api_key -n aldea -r -2170 -m 'basic'
+
+to find out the rule id use the following shell comand 
+on airlock
+
+NAME=TI_001c; grep -P -B1 "\.Name=.*$NAME" /opt/airlock/mgt-agent/conf/default-patterns/denyRuleFactoryDefaults.properties | awk -F= '/Id=/ { print $2 }'
+
+Tested with:
+- Airlock Gateway 7.7
 """
 
 from cgitb import enable
@@ -41,7 +56,7 @@ group_sel.add_argument("-l", dest="mapping_selector_label", metavar="label",
 parser.add_argument("-f", dest="confirm", action="store_false",
                     help="Force, no confirmation needed")
 parser.add_argument("-d", dest="activate", action="store_false",
-                    help="Deactivate Rule instead")
+                    help="disabled log-only")
 parser.add_argument("-k", dest="api_key_file", metavar="api_key_file",
                     default=DEFAULT_API_KEY_FILE,
                     help="Path to API key file "
@@ -134,9 +149,9 @@ def get_mappings():
 
 def create_change_info(affected_mapping_names):
     if args.activate:
-        change_info = 'Rule {} activated in log-only mode'.format(args.rule_id)
+        change_info = 'Log-only for rule {} enabled'.format(args.rule_id)
     else:    
-        change_info = 'Rule {} deactivated'.format(args.rule_id)
+        change_info = 'Log-only for rule {} removed'.format(args.rule_id)
 
     change_info += ' for the following mapping(s): \n\t{}'\
                    .format('\n\t'.join(affected_mapping_names))
