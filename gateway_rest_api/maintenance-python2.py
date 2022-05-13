@@ -117,3 +117,4 @@ data = {"comment": CONFIG_COMMENT}
 send_request("POST", "configuration/configurations/activate", json.dumps(data))
 
 terminate_and_exit(0)
+
