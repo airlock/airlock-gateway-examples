@@ -1,111 +1,175 @@
 #!/usr/bin/env python3
 # coding=utf-8
 """
-version 2.1
-Script to activate maintenance page on a WAF mapping
+version 3.0
+Script to:
+    - show mappings with activated maintenance page
+        ./maintenance.py -h my_airlock -m "^mapping.*pattern$" -a show
+    - activate/deactivate maintenance on a mapping
+        ./maintenance.py -h my_airlock -m "^mapping.*pattern$" -a enable
+    - delete WAF mappings
+        ./maintenance.py -h my_airlock -m "^mapping.*pattern$" -a delete
+
+- Tested with Airlock Gateway 7.8
+- Operates on the last saved/activated config
+- Activates new config, requires confirmation by default
 """
 
-# file to store REST API key
-API_KEY_FILE = "./api_key"
-
+from urllib import request
 import requests
 import ssl
 import json
 import os
 import sys
+import re
 from argparse import ArgumentParser
 from http.cookiejar import CookieJar
-from signal import *
+import signal
+
+# file to store REST API key (Configcenter - System Setup - System Admin)
+API_KEY_FILE = "./api_key"
 
 parser = ArgumentParser(add_help=False)
 parser.add_argument("-h", dest="host", metavar="<WAF hostname>",
                     required=True, help="Airlock WAF hostname")
-parser.add_argument("-m", dest="mapping", metavar="<mapping name>",
-                    required=True, help="Logical name of the WAF mapping")
-parser.add_argument("-a", choices=['enable', 'disable'], dest="action",
+parser.add_argument("-m", dest="mapping_selector_pattern",
+                    required=True, metavar="pattern",
+                    help="Pattern matching mapping name(s), e.g. ^mapping_a$")
+parser.add_argument("-a", choices=['enable', 'disable', 'show', 'delete'], dest="action",
                     required=True, help="Enable or disable maintenance page")
+parser.add_argument("-f", dest="confirm", action="store_false",
+                    help="Force, no confirmation needed")
 
 args = parser.parse_args()
 
-# Define constants.
-api_key = open(API_KEY_FILE, 'r').read().strip()
-TARGET_WAF = "https://{}".format(args.host)
-REST_URL = TARGET_WAF + "/airlock/rest"
-CONFIG_COMMENT = "Script: set maintenance page "\
-    "for mapping {} to {}".format(args.mapping, args.action)
-DEFAULT_HEADERS = {"Accept": "application/json",
-                   "Content-Type": "application/json",
-                   "Authorization": "Bearer {}".format(api_key)}
+try:
+    api_key = open(API_KEY_FILE, 'r').read().strip()
+except OSError:
+    print(f'There was an error opening the file {API_KEY_FILE}')
+    sys.exit(1)
+
+DEFAULT_HEADERS = {"Authorization": f'Bearer {api_key}'}
+
+opener = request.build_opener(request.HTTPCookieProcessor(CookieJar()))
+# ignore invalid SSL cert on the management interface
+if (not os.environ.get('PYTHONHTTPSVERIFY', '') and
+        getattr(ssl, '_create_unverified_context', None)):
+    ssl._create_default_https_context = ssl._create_unverified_context
+
+
+def send_request(
+        method,
+        path,
+        body="",
+        accept_header="application/json",
+        content_type="application/json"):
+    DEFAULT_HEADERS['Accept'] = accept_header
+    DEFAULT_HEADERS['Content-Type'] = content_type
+    if content_type == "application/json":
+        body = body.encode('utf-8')
+    req = request.Request(f'https://{args.host}/airlock/rest/' + path,
+                          body, DEFAULT_HEADERS)
+    req.get_method = lambda: method
+    r = opener.open(req)
+    return r.read()
 
 
 def terminate_and_exit(text):
-    session.post(url=REST_URL+"/session/terminate")
+    send_request("POST", "session/terminate")
     sys.exit(text)
-# signal handler
-def cleanup(signum, frame):
-    terminate_and_exit("Terminate session")
 
 
-for sig in (SIGABRT, SIGILL, SIGINT, SIGSEGV, SIGTERM):
-    signal(sig, cleanup)
+def register_cleanup_handler():
+    def cleanup(signum, frame):
+        terminate_and_exit("Terminate session")
+
+    for sig in (signal.SIGABRT, signal.SIGILL, signal.SIGINT, signal.SIGSEGV,
+                signal.SIGTERM):
+        signal.signal(sig, cleanup)
 
 
-# Create Session
-session = requests.Session()
-session.hooks = {
-   'response': lambda r, *args, **kwargs: r.raise_for_status()
-}
-session.verify = False
-requests.packages.urllib3.disable_warnings()
-session.headers = DEFAULT_HEADERS
-# We use a CookieJar to store and reflect the Cookies received from Airlock
-session.cookies = CookieJar()
+def get_mappings():
+    def get_all_mappings():
+        resp = json.loads(send_request(
+            "GET", "configuration/mappings"))['data']
+        return sorted(resp, key=lambda x: x['attributes']['name'])
 
-# Start session
-response = session.post(url=REST_URL+"/session/create")
-
-# get active config id
-response = session.get(url=REST_URL+"/configuration/configurations")
-response = json.loads(response.text)
-id = [x["id"] for x in response["data"]
-        if(x['attributes']["configType"] == "CURRENTLY_ACTIVE")][0]
-
-# load active config
-session.post(url=REST_URL+"/configuration/configurations/{}/load".format(id))
-
-# get all mappings
-response = session.get(REST_URL+"/configuration/mappings")
-response = response.json()
-
-# get mapping with correct name
-m_ids = [x['id'] for x in response['data']
-         if(x['attributes']['name'] == args.mapping)]
+    return ([
+        {'id': x['id'],
+         'name': x['attributes']['name'],
+         'maintenance_page': x['attributes']['enableMaintenancePage']}
+        for x in get_all_mappings() if (
+            re.search(args.mapping_selector_pattern,
+                      x['attributes']['name'])
+        )
+    ])
 
 
-if not m_ids:
-    terminate_and_exit("Mapping '{}' not found".format(args.mapping))
+def create_change_info(affected_mapping_names):
+    change_info = ''
+    if args.action == "enable":
+        change_info += "Enable maintenance page for"
+    elif args.action == "disable":
+        change_info += "Disable maintenance page for"
+    elif args.action == "delete":
+        change_info += "Delete"
+
+    change_info += ' the following mapping(s): \n\t{}'\
+                   .format('\n\t'.join(affected_mapping_names))
+    return change_info
+
+
+def confirm(change_info):
+    if not args.confirm:
+        return True
+    print(change_info)
+    if input('\nContinue to activate the new config? [y/n] ') == 'y':
+        return True
+    print("Nothing changed")
+    return False
+
+
+def activate_config(change_info):
+    confirm(change_info) or terminate_and_exit(0)
+
+    data = {"comment": "REST: " +
+            change_info.replace('\n\t', ', ').replace(': ,', ':')}
+    send_request("POST", "configuration/configurations/activate",
+                 json.dumps(data))
+
+
+send_request("POST", "session/create")
+register_cleanup_handler()
+
+resp = json.loads(send_request("GET", "configuration/configurations"))
+send_request("POST", 'configuration/configurations/'
+             f"{resp['data'][0]['id']}/load")
+
+mappings = get_mappings() or terminate_and_exit("No mapping found - exit")
+
+if args.action == "show":
+    print("Mapping Name, Maintenance Page Status")
+    for mapping in mappings:
+        print(f"{mapping['name']}, {mapping['maintenance_page']}")
 else:
-    mapping_id = m_ids[0]
+    if args.action in ["enable", "disable"]:
+        for mapping in mappings:
+            data = {
+                "data": {
+                    "attributes": {
+                        "enableMaintenancePage": "true" if args.action == "enable" else "false"
+                    },
+                    "id": mapping['id'],
+                    "type": "mapping"
+                }
+            }
+            send_request(
+                "PATCH", f"configuration/mappings/{mapping['id']}", json.dumps(data))
+    elif args.action == "delete":
+        for mapping in mappings:
+            send_request("DELETE", f"configuration/mappings/{mapping['id']}")
 
-enable_maintenance_page = "true" if args.action == "enable" else "false"
-
-data = {
-    "data": {
-        "attributes": {
-            "enableMaintenancePage": enable_maintenance_page
-        },
-        "id": mapping_id,
-        "type": "mapping"
-    }
-}
-# patch the config
-session.patch(REST_URL+"/configuration/mappings/{}"
-              .format(mapping_id), data=json.dumps(data))
-
-data = {"comment": CONFIG_COMMENT}
-
-# activate config
-session.post(REST_URL+"/configuration/configurations/activate",
-             data=json.dumps(data))
+    change_info = create_change_info(sorted(x['name'] for x in mappings))
+    activate_config(change_info)
 
 terminate_and_exit(0)
