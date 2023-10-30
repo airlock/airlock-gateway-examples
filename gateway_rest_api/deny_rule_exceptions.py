@@ -6,8 +6,14 @@ It enables the addition, deletion, and listing of exceptions for deny rule group
 
 **Requirements**
 
-The script requires a REST API key for Airlock Gateway. This key can be stored in "./api_key.txt" file or
-it can directly be provided using the '-k' command-line option.
+The script uses a Python library for interacting with Airlock Gateway's REST API. This library is available at
+https://github.com/airlock/airlock-gateway-rest-api-lib-py/tree/main/src/airlock_gateway_rest_api_lib and should be
+placed in the directory airlock_gateway_rest_api_lib:
+
+git clone https://github.com/airlock/airlock-gateway-rest-api-lib-py.git airlock_gateway_rest_api_lib
+
+The script requires a REST API key for Airlock Gateway. This key can be stored in "./api_key.conf" file or it can
+directly be provided using the '-k' command-line option.
 
 **Functionality and Commands**
 The script contains three main functionalities:
@@ -40,25 +46,23 @@ Moreover, the add function requires a pattern for the exception (-P or -H comman
 - `--activate`: Activate the configuration changes on the gateway, by default the changes will be saved but not activated.
 
 **Examples**
-Add an exception to the mapping ^Auth$ in deny rule groups matching SQL, activate the new configuration:
-    ./deny_rule_exceptions.py add -g bohol -M '^Auth$' -G SQL -P foo -i 'bar' -c test --activate
-Delete the exception 'bar' from the mapping ^Auth$ in deny rule groups matching SQL, activate the new configuration:
-    ./deny_rule_exceptions.py delete -g bohol -M '^Auth$' -G SQL -i 'bar' -c test --activate
-List exceptions from the mapping ^Auth$ in deny rule groups matching SQL:
-    ./deny_rule_exceptions.py list -g bohol -M '^Auth$' -G SQL
-
+Add an exception for the parameter "comment" to all parameter value deny-rule groups on all "MyBank"-mappings:
+    ./deny_rule_exceptions.py add -g gateway -M '^MyBank.*' -G '.*' -P '^comment$' -i 'paymentComment1' -c test --activate
+Delete the exception 'paymentComment1' from all "MyBank"-mappings in all deny rule groups, activate the configuration:
+    ./deny_rule_exceptions.py delete -g gateway -M '^MyBank.*' -G '.*'  -i 'paymentComment1' -c test --activate
+List exceptions from all "MyBank"-mappings:
+    ./deny_rule_exceptions.py list -g gateway -M '^MyBank.*' -G '.*'
 """
 
-from airlock_gateway_rest_api_lib import airlock_gateway_rest_api_lib as al
-import signal
+from airlock_gateway_rest_api_lib.src.airlock_gateway_rest_api_lib import airlock_gateway_rest_api_lib as al
 import argparse
-import logging
-import sys
-import re
-import pprint
-import configparser
-import os
 import click
+import configparser
+import logging
+import os
+import re
+import signal
+import sys
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -75,7 +79,7 @@ def register_cleanup_handler():
     """
 
     def cleanup(signum, frame):
-        al.terminate_session("Terminate session")
+        al.terminate_session(SESSION)
 
     for sig in (
         signal.SIGABRT,
@@ -83,123 +87,143 @@ def register_cleanup_handler():
         signal.SIGINT,
         signal.SIGSEGV,
         signal.SIGTERM,
+        signal.SIGQUIT,
     ):
         signal.signal(sig, cleanup)
 
+def terminate_with_error(message=None):
+    """
+    Terminate the session and exit with an error message.
+    """
+    if message:
+        print(message)
+    al.terminate_session(SESSION)
+    sys.exit(1)
 
-def add_exception(args, session, pattern, exception_regex):
+
+def get_mappings_and_groups(mapping_regex, group_regex, assumeyes):
     """
-    Add an exception to a deny rule group and mapping.
+    Get selected mappings and groups.
     """
-    selected_mappings = al.select_mappings(session, args.mapping_regex)
+
+    selected_mappings = al.select_mappings(SESSION, mapping_regex)
+
+    if not selected_mappings:
+        terminate_with_error("No mappings selected")
+
     selected_groups = []
-    for dr in al.get_deny_rule_groups(session):
-        if re.search(args.group_regex, dr["attributes"]["name"]):
+    for dr in al.get_deny_rule_groups(SESSION):
+        if re.search(group_regex, dr["attributes"]["name"]):
             selected_groups.append(dr)
+
+    if not selected_groups:
+        terminate_with_error("No deny-rule groups selected")
 
     print("Selected mappings:")
     [print("\t" + mapping["attributes"]["name"]) for mapping in selected_mappings]
     print("Selected deny-rule groups:")
     [print("\t" + group["attributes"]["name"]) for group in selected_groups]
+    if not assumeyes and not click.confirm("Do you want to continue?", default=True):
+        terminate_with_error("")
 
-    if not selected_mappings:
-        print("No mappings selected")
-        exit(1)
-    if not selected_groups:
-        print("No deny-rule groups selected")
-        exit(1)
-    if not args.assumeyes and not click.confirm("Do you want to continue?", default=True):
-        exit(1)
+    return selected_mappings, selected_groups
+
+
+def add_exception(mapping_regex, group_regex, parameter_name_pattern, header_name_pattern, identifier, assumeyes):
+    """
+    Add an exception to a deny rule group and mapping.
+    """
+
+    selected_mappings, selected_groups = get_mappings_and_groups(mapping_regex, group_regex, assumeyes)
 
     for mapping in selected_mappings:
         for group in selected_groups:
-            group_data = al.get_mapping_deny_rule_group(session, mapping["id"], group["id"])
+            group_data = al.get_mapping_deny_rule_group(SESSION, mapping["id"], group["id"])
             for exception in group_data["attributes"]["exceptions"]:
-                if "parameterNamePattern" in exception and exception["parameterNamePattern"]["name"] == args.identifier:
+                if "parameterNamePattern" in exception and exception["parameterNamePattern"]["name"] == identifier:
                     print(
-                        f'A parameter name exception with identifier "{args.identifier}" already exists\nin mapping "{mapping["attributes"]["name"]}" and deny-rule group "{group["attributes"]["name"]}"'
+                        f'''A parameter name exception with identifier "{identifier}"
+                        already exists in mapping "{mapping["attributes"]["name"]}"
+                        and deny-rule group "{group["attributes"]["name"]}"'''
                     )
-                    print("Use the delete command to remove these exceptions or choose a different identifier")
-                    exit(1)
+                    terminate_with_error("Use the delete command to remove these exceptions or choose a different identifier")
 
-                if "headerNamePattern" in exception and exception["headerNamePattern"]["name"] == args.identifier:
+                if "headerNamePattern" in exception and exception["headerNamePattern"]["name"] == identifier:
                     print(
-                        f'A header name exception with identifier "{args.identifier}" already exists\nin mapping "{mapping["attributes"]["name"]}" and deny-rule group "{group["attributes"]["name"]}"'
+                        f'''A header name exception with identifier "{identifier}"
+                        already exists in mapping "{mapping["attributes"]["name"]}"
+                        and deny-rule group "{group["attributes"]["name"]}"'''
                     )
-                    print("\nUse the delete command to remove these exceptions or choose a different identifier")
-                    exit(1)
+                    terminate_with_error("Use the delete command to remove these exceptions or choose a different identifier")
+
+    if parameter_name_pattern:
+        pattern = "parameterNamePattern"
+        exception_regex = parameter_name_pattern
+    else:
+        pattern = "headerNamePattern"
+        exception_regex = header_name_pattern
 
     exception = {
         "enabled": True,
         f"{pattern}": {
             "enabled": True,
             "pattern": f"{exception_regex}",
-            "name": f"{args.identifier}",
+            "name": f"{identifier}",
         },
     }
     for mapping in selected_mappings:
         for group in selected_groups:
-            group_data = al.get_mapping_deny_rule_group(session, mapping["id"], group["id"])
+            group_data = al.get_mapping_deny_rule_group(SESSION, mapping["id"], group["id"])
             exceptions = group_data["attributes"]["exceptions"] + [exception]
-            al.update_mapping_deny_rule_group(session, mapping["id"], group["id"], {"exceptions": exceptions})
+            al.update_mapping_deny_rule_group(SESSION, mapping["id"], group["id"], {"exceptions": exceptions})
 
 
-def delete_exception(args, session):
+def delete_exception(mapping_regex, group_regex, identifier, assumeyes):
     """
     Delete an exception from a deny rule group and mapping.
     """
-    selected_mappings = al.select_mappings(session, args.mapping_regex)
-    selected_groups = []
-    for dr in al.get_deny_rule_groups(session):
-        if re.search(args.group_regex, dr["attributes"]["name"]):
-            selected_groups.append(dr)
-
-    print("Selected mappings:")
-    [print("\t" + mapping["attributes"]["name"]) for mapping in selected_mappings]
-    print("Selected deny-rule groups:")
-    [print("\t" + group["attributes"]["name"]) for group in selected_groups]
-
-    if not selected_mappings:
-        print("No mappings selected")
-        exit(1)
-    if not selected_groups:
-        print("No deny-rule groups selected")
-        exit(1)
-    if not args.assumeyes and not click.confirm("Do you want to continue?", default=True):
-        exit(1)
+    deleted_something = False
+    selected_mappings, selected_groups = get_mappings_and_groups(mapping_regex, group_regex, assumeyes)
 
     for mapping in selected_mappings:
         for group in selected_groups:
-            group_ids = session, mapping["id"], group["id"]
+            group_ids = SESSION, mapping["id"], group["id"]
             deny_rule_group_data = al.get_mapping_deny_rule_group(*group_ids)
 
             exceptions = deny_rule_group_data["attributes"]["exceptions"]
             pattern = "parameterNamePattern"
             for exception in exceptions:
-                if pattern in exception and exception[pattern]["name"] == args.identifier:
+                if pattern in exception and exception[pattern]["name"] == identifier:
                     exceptions.remove(exception)
+                    deleted_something = True
             pattern = "headerNamePattern"
             for exception in exceptions:
-                if pattern in exception and exception[pattern]["name"] == args.identifier:
+                if pattern in exception and exception[pattern]["name"] == identifier:
                     exceptions.remove(exception)
+                    deleted_something = True
 
             al.update_mapping_deny_rule_group(*group_ids, {"exceptions": exceptions})
 
+    if deleted_something:
+        return
 
-def list_exceptions(args, session):
+    terminate_with_error(f'No exceptions with identifier "{identifier}" found')
+
+
+def list_exceptions(mapping_regex, group_regex):
     """
     List exceptions for specific deny rule groups and mapping.
     """
-    selected_mappings = al.select_mappings(session, args.mapping_regex)
+    selected_mappings = al.select_mappings(SESSION, mapping_regex)
     selected_groups = []
-    for dr in al.get_deny_rule_groups(session):
-        if re.search(args.group_regex, dr["attributes"]["name"]):
+    for dr in al.get_deny_rule_groups(SESSION):
+        if re.search(group_regex, dr["attributes"]["name"]):
             selected_groups.append(dr)
 
     table = []
     for mapping in selected_mappings:
         for group in selected_groups:
-            group_ids = session, mapping["id"], group["id"]
+            group_ids = SESSION, mapping["id"], group["id"]
             deny_rule_group_data = al.get_mapping_deny_rule_group(*group_ids)
             exceptions = deny_rule_group_data["attributes"]["exceptions"]
             for exception in exceptions:
@@ -244,36 +268,37 @@ def main():
     subparsers.required = True
     subparsers.dest = "command"
 
-    parser_add.add_argument("-g", "--gateway", help="Gateway to activate config on", required=True)
-    parser_add.add_argument("-p", "--port", help="Gateway HTTPS port", type=int, default=443)
-    parser_add.add_argument("-M", "--mapping-regex", help="Pattern selecting mapping names", required=True)
     parser_add.add_argument("-G", "--group-regex", help="Identifier for the deny rule", required=True)
+    parser_add.add_argument("-M", "--mapping-regex", help="Pattern selecting mapping names", required=True)
+    parser_add.add_argument("-g", "--gateway", help="Gateway to activate config on", required=True)
     parser_add.add_argument("-k", "--api-key", help="REST API key")
+    parser_add.add_argument("-p", "--port", help="Gateway HTTPS port", type=int, default=443)
 
-    parser_del.add_argument("-g", "--gateway", help="Gateway to activate config on", required=True)
-    parser_del.add_argument("-p", "--port", help="Gateway HTTPS port", type=int, default=443)
-    parser_del.add_argument("-M", "--mapping-regex", help="Pattern selecting mapping names", required=True)
     parser_del.add_argument("-G", "--group-regex", help="Identifier for the deny rule", required=True)
+    parser_del.add_argument("-M", "--mapping-regex", help="Pattern selecting mapping names", required=True)
+    parser_del.add_argument("-g", "--gateway", help="Gateway to activate config on", required=True)
     parser_del.add_argument("-k", "--api-key", help="REST API key")
+    parser_del.add_argument("-p", "--port", help="Gateway HTTPS port", type=int, default=443)
 
-    parser_lst.add_argument("-g", "--gateway", help="Gateway to activate config on", required=True)
-    parser_lst.add_argument("-p", "--port", help="Gateway HTTPS port", type=int, default=443)
-    parser_lst.add_argument("-M", "--mapping-regex", help="Pattern selecting mapping names", required=True)
     parser_lst.add_argument("-G", "--group-regex", help="Identifier for the deny rule", required=True)
+    parser_lst.add_argument("-M", "--mapping-regex", help="Pattern selecting mapping names", required=True)
+    parser_lst.add_argument("-g", "--gateway", help="Gateway to activate config on", required=True)
     parser_lst.add_argument("-k", "--api-key", help="REST API key")
+    parser_lst.add_argument("-p", "--port", help="Gateway HTTPS port", type=int, default=443)
 
     parse_pattern = parser_add.add_mutually_exclusive_group(required=True)
-    parse_pattern.add_argument("-P", "--parameter-name-pattern", help="Parameter Name Pattern")
     parse_pattern.add_argument("-H", "--header-name-pattern", help="Header Name Pattern")
+    parse_pattern.add_argument("-P", "--parameter-name-pattern", help="Parameter Name Pattern")
 
-    parser_add.add_argument("-i", "--identifier", help="Identifier for the exception", required=True)
-    parser_del.add_argument("-i", "--identifier", help="Identifier for the exception", required=True)
-    parser_add.add_argument("-c", "--comment", help="Comment for the change", default="Modify exceptions with REST API")
-    parser_del.add_argument("-c", "--comment", help="Comment for the change", default="Modify exceptions with REST API")
-    parser_add.add_argument("-y", "--assumeyes", help="Automatically answer yes for all questions", action="store_true")
-    parser_del.add_argument("-y", "--assumeyes", help="Automatically answer yes for all questions", action="store_true")
     parser_add.add_argument("--activate", help="Activate configuration", action="store_true")
+    parser_add.add_argument("-c", "--comment", help="Comment for the change", default="Modify exceptions with REST API")
+    parser_add.add_argument("-i", "--identifier", help="Identifier for the exception", required=True)
+    parser_add.add_argument("-y", "--assumeyes", help="Automatically answer yes for all questions", action="store_true")
+
     parser_del.add_argument("--activate", help="Activate configuration", action="store_true")
+    parser_del.add_argument("-c", "--comment", help="Comment for the change", default="Modify exceptions with REST API")
+    parser_del.add_argument("-i", "--identifier", help="Identifier for the exception", required=True)
+    parser_del.add_argument("-y", "--assumeyes", help="Automatically answer yes for all questions", action="store_true")
 
     args = parser.parse_args()
 
@@ -287,53 +312,47 @@ def main():
         sys.exit("API key needed, either with -k flag or in a api_key.conf file")
 
     try:
-        session = al.create_session(args.gateway, api_key, args.port)
+        global SESSION
+        SESSION = al.create_session(args.gateway, api_key, args.port)
     except Exception as e:
-        print(f"There was an error creating the session: are the gateway URL, port and API key valid?")
-        sys.exit(1)
-
-    gw_version = al.get_version(session)
-    if gw_version != "8.1":
-        print(f"Gateway version {gw_version} is not supported. Please use version 8.1")
-        sys.exit(1)
+        sys.exit("There was an error creating the session: are the gateway URL, port and API key valid?")
 
     register_cleanup_handler()
 
+    gw_version = al.get_version(SESSION)
+    if gw_version != "8.1":
+        terminate_with_error(f"Gateway version {gw_version} is not supported. Please use version 8.1")
+
     # Makes sure the loaded configuration matches the currently active one.
-    al.load_active_config(session)
+    al.load_active_config(SESSION)
 
     # Save backup of original config file
     # al.export_current_config_file(session, "./config.zip")
 
+    if args.command == "list":
+        list_exceptions(args.mapping_regex, args.group_regex)
+        al.terminate_session(SESSION)
+        return
+
     if args.command == "add":
-        if args.parameter_name_pattern:
-            pattern = "parameterNamePattern"
-            exception_regex = args.parameter_name_pattern
-        elif args.header_name_pattern:
-            pattern = "headerNamePattern"
-            exception_regex = args.header_name_pattern
-        add_exception(args, session, pattern, exception_regex)
-        print("Saving configuration...")
-        al.save_config(session, f"{args.comment}")
-        if args.activate:
-            print("Activating configuration...")
-            al.activate(session, f"{args.comment}")
+        add_exception(args.mapping_regex, args.group_regex, args.parameter_name_pattern, args.header_name_pattern,
+                      args.identifier, args.assumeyes)
     elif args.command == "delete":
-        delete_exception(args, session)
+        delete_exception(args.mapping_regex, args.group_regex, args.identifier, args.assumeyes)
+
+    if args.activate:
+        print("Activating configuration...")
+        al.activate(SESSION, f"{args.comment}")
+    else:
         print("Saving configuration...")
-        al.save_config(session, f"{args.comment}")
-        if args.activate:
-            print("Activating configuration...")
-            al.activate(session, f"{args.comment}")
-    elif args.command == "list":
-        list_exceptions(args, session)
+        al.save_config(SESSION, f"{args.comment}")
 
     # This line doesn't do anything as we never activated any config,
     # but in general this is how you restore the backup that you stored
     # at the beginning of the script.
     # al.import_config(session, "./config.zip")
 
-    al.terminate_session(session)
+    al.terminate_session(SESSION)
 
 
 if __name__ == "__main__":
