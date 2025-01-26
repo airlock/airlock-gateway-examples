@@ -1,4 +1,4 @@
-This repository contains a set of example scripts for the Airlock Gateway REST interface.
+This directory contains a set of example scripts for the Airlock Gateway REST interface.
 
 **Your use of any script is at your own risk and without warranty of any kind.**
 
