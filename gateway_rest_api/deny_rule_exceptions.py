@@ -320,8 +320,11 @@ def main():
     register_cleanup_handler()
 
     gw_version = al.get_version(SESSION)
-    if gw_version != "8.1":
-        terminate_with_error(f"Gateway version {gw_version} is not supported. Please use version 8.1")
+
+    # Check if the version is 8.1, 8.2, or 8.3
+    if not (gw_version.startswith("8.1") or gw_version.startswith("8.2") or gw_version.startswith("8.3") or gw_version.startswith("8.4")):
+        terminate_with_error(f"Gateway version {gw_version} is not supported. Please use versions 8.1 - 8.4")
+
 
     # Makes sure the loaded configuration matches the currently active one.
     al.load_active_config(SESSION)
