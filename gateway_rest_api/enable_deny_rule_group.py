@@ -99,11 +99,18 @@ def main():
     # For each mapping, update the deny rule group settings
     for mapping in mappings:
         mapping_id = mapping['id']
+        mapping_drg = al.get_mapping_deny_rule_group(
+            SESSION,
+            mapping_id,
+            args.deny_rule_group_id
+        )
+        print(mapping_drg)
+        mapping_drg['attributes']['enabled'] = enable_flag
         success = al.update_mapping_deny_rule_group(
             SESSION,
             mapping_id,
             args.deny_rule_group_id,
-            {"disable": enable_flag}
+            mapping_drg['attributes']
         )
         if success:
             print(f"Updated mapping '{mapping['attributes']['name']}', mapping ID: {mapping_id}")
