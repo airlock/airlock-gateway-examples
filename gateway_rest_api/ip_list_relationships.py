@@ -254,15 +254,16 @@ def main():
             sys.exit("Unsupported update type.")
 
         if not args.assumeyes:
-            ans = input("\nContinue to activate the new configuration? [y/n] ")
+            ans = input("\nContinue to save the new configuration? [y/n] ")
             if ans.lower() != "y":
-                al.save_config(SESSION, args.comment)
-                print("Configuration saved, but not activated.")
+                terminate_with_error("Operation cancelled.")
         if al.activate(SESSION, args.comment):
             print("Configuration activated successfully.")
         else:
+            # If not activated, just save.
             al.save_config(SESSION, args.comment)
             print("Configuration saved.")
+        al.terminate_session(SESSION)
     else:
         sys.exit("Unsupported command.")
 

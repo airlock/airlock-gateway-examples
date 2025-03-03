@@ -345,11 +345,6 @@ def main():
         print("Saving configuration...")
         al.save_config(SESSION, f"{args.comment}")
 
-    # This line doesn't do anything as we never activated any config,
-    # but in general this is how you restore the backup that you stored
-    # at the beginning of the script.
-    # al.import_config(session, "./config.zip")
-
     al.terminate_session(SESSION)
 
 
