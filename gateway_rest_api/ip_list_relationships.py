@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # coding=utf-8
 """
-IP List Management on Airlock Gateway Versions 8.3.2 +
+IP List Management on Airlock Gateway Versions 8.3.2 and later.
 
 This script supports three operations:
   1. list   : Lists all IP address lists (with IDs and IPs).
@@ -14,7 +14,7 @@ This script supports three operations:
                     For each mapping, the script patches its ipRules.ipAddressWhitelists
                     by appending a new entry (or extending an existing one) that includes
                     the provided IP list ID and a path pattern.
-                    
+
 After performing the updates, the script prompts (unless --assumeyes is given) and then activates the configuration.
 
 API key is provided via the -k/--api-key flag or read from an "api_key.conf" file (with a [KEY] section).
@@ -254,9 +254,10 @@ def main():
             sys.exit("Unsupported update type.")
 
         if not args.assumeyes:
-            ans = input("\nContinue to save the new configuration? [y/n] ")
+            ans = input("\nContinue to activate the new configuration? [y/n] ")
             if ans.lower() != "y":
-                terminate_with_error("Operation cancelled.")
+                al.save_config(SESSION, args.comment)
+                print("Configuration saved, but not activated.")
         if al.activate(SESSION, args.comment):
             print("Configuration activated successfully.")
         else:

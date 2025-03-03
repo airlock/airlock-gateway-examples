@@ -4,6 +4,8 @@
 Version 1.1
 Script to update log‑only mode on deny rule groups for selected mappings.
 
+Tested with Airlock Gateway versions 8.3 and 8.4.
+
 This script directly interacts with the REST API endpoint:
 
     PATCH /configuration/mappings/{mappingId}/deny-rule-groups/{groupShortName}

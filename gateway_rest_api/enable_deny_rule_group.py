@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """
-Script to enable or disable a deny rule group on all mappings using
-the Airlock REST API library (airlock_gateway_rest_api_lib.py).
+Script to enable or disable a deny rule group on all mappings.
+
+Tested with Airlock Gateway versions 8.3 and 8.4.
 
 Usage example:
-    ./enable_deny_rule_group.py -g mywaf.example.com -G SQL_005A -a enable -k <YOUR_API_KEY>
+    ./enable_deny_rule_group.py -g mywaf.example.com -G SQLI_PARAM_VALUE -a enable -k <YOUR_API_KEY>
     
 If -k is not provided, the script will try to read the API key from "api_key.conf"
 with a [KEY] section and an "api_key" value.
-
-Tested with Airlock Gateway 8.3
 """
 
 import sys

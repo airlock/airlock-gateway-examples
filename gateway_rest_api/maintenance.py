@@ -11,6 +11,7 @@ Operations include:
     - Deleting selected WAF mappings:
          ./maintenance.py -g my_airlock -M "^mapping.*pattern$" -a delete
 
+Tested with Airlock Gateway versions 8.3 and 8.4.
 
 If the API key is not provided with -k, it will be read from an api_key.conf file 
 (with a [KEY] section and an "api_key" value).
