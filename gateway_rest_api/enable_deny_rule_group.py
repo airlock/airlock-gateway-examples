@@ -36,8 +36,7 @@ def terminate_with_error(message=None):
     """Terminate the session and exit with an error message."""
     if message:
         print(message)
-    if SESSION:
-        al.terminate_session(SESSION)
+    al.terminate_session(SESSION)
     sys.exit(1)
 
 def register_cleanup_handler():

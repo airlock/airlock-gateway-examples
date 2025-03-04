@@ -53,14 +53,12 @@ DEFAULT_API_KEY_FILE = "api_key.conf"
 def terminate_with_error(message=None):
     if message:
         print(message)
-    if SESSION:
-        al.terminate_session(SESSION)
+    al.terminate_session(SESSION)
     sys.exit(1)
 
 def register_cleanup_handler():
     def cleanup(signum, frame):
-        if SESSION:
-            al.terminate_session(SESSION)
+        al.terminate_session(SESSION)
         sys.exit("Session terminated due to signal.")
     for sig in (signal.SIGABRT, signal.SIGILL, signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, cleanup)
