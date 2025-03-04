@@ -246,7 +246,7 @@ def main():
             print(json.dumps(result, indent=4))
 
         if not args.assumeyes:
-            ans = input("\nContinue to save the new configuration? [y/n] ")
+            ans = input("\nContinue to save and activate the new configuration? [y/n] ")
             if ans.lower() != "y":
                 terminate_with_error("Operation cancelled.")
         if al.activate(SESSION, args.comment):

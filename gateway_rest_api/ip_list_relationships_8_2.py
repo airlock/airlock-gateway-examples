@@ -168,7 +168,7 @@ def main():
         print(json.dumps(result, indent=4))
         # Confirm change (unless assumeyes is provided) and then save/activate config.
         if not args.assumeyes:
-            ans = input("\nContinue to save the new configuration? [y/n] ")
+            ans = input("\nContinue to save and activate the new configuration? [y/n] ")
             if ans.lower() != "y":
                 terminate_with_error("Operation cancelled.")
         # Try to activate; if activation fails, save the config.
