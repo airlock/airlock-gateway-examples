@@ -147,8 +147,6 @@ def update_whitelist(session, ip_list_id: str, mapping_regex: str, path_pattern:
         if not whitelist or not isinstance(whitelist, dict):
             whitelist = {"logOnly": False, "pathWhitelists": []}
         path_whitelists = whitelist.get("pathWhitelists", [])
-        if not isinstance(path_whitelists, list):
-            path_whitelists = []
 
         ip_id = int(ip_list_id)
         found_entry = None
@@ -246,8 +244,6 @@ def main():
                 sys.exit("For whitelist updates, --path-pattern is required.")
             result = update_whitelist(SESSION, args.ip_list_id, args.mapping_regex, args.path_pattern, args.assumeyes)
             print(json.dumps(result, indent=4))
-        else:
-            sys.exit("Unsupported update type.")
 
         if not args.assumeyes:
             ans = input("\nContinue to save the new configuration? [y/n] ")
