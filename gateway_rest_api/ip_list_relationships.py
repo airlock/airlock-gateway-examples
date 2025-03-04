@@ -90,40 +90,38 @@ def list_ip_lists(session):
 def update_blacklist(session, ip_list_id: str, mapping_regex: str, force: bool) -> dict:
     """
     Updates the IP blacklist for the given IP list by selecting mappings
-    matching the provided regex and appending them as mapping references.
+    matching the provided regex.
+
+    Since the WAF treats the mapping IDs as a set (ignoring duplicates and
+    preserving existing entries not sent in the PATCH payload), we can simply send
+    the selected mapping IDs.
     """
-    mappings = al.select_mappings(session, pattern=mapping_regex)
-    if not mappings:
+    # Retrieve selected mappings by regex.
+    selected_mappings = al.select_mappings(session, pattern=mapping_regex)
+    if not selected_mappings:
         terminate_with_error("No mappings found matching the regex.")
 
-    new_entries = []
-    mapping_refs = []
-    for mapping in mappings:
-        entry = {"type": "mapping", "id": mapping["id"]}
-        if entry not in mapping_refs:
-            mapping_refs.append(entry)
-            new_entries.append(entry)
-
-    if not new_entries:
-        print("No new mapping entries to add.")
-        return {}
-
+    # Build the payload with the mapping references.
+    mapping_refs = [{"type": "mapping", "id": mapping["id"]} for mapping in selected_mappings]
     payload = {"data": mapping_refs}
 
     if not force:
         print(f"About to update IP list {ip_list_id} blacklist with these mapping IDs:")
-        for entry in new_entries:
-            print(f"  {entry['id']}")
+        for ref in mapping_refs:
+            print(f"  {ref['id']}")
         ans = input("Continue with update? [y/n] ")
         if ans.lower() != "y":
             terminate_with_error("Operation cancelled.")
 
+    # PATCH the new blacklist mappings.
     endpoint = f"/configuration/ip-address-lists/{ip_list_id}/relationships/mappings-blacklist"
-    res = al.patch(session, endpoint, payload, exp_code=[204,404])
+    res = al.patch(session, endpoint, payload, exp_code=[204, 404])
     if res.status_code == 204:
         print("IP blacklist updated successfully.")
     else:
         print("Failed to update IP blacklist.")
+
+    return {"updated_mapping_ids": [mapping["id"] for mapping in selected_mappings]}
 
 def update_whitelist(session, ip_list_id: str, mapping_regex: str, path_pattern: str, force: bool) -> dict:
     """
@@ -261,9 +259,6 @@ def main():
             # If not activated, just save.
             al.save_config(SESSION, args.comment)
             print("Configuration saved.")
-        al.terminate_session(SESSION)
-    else:
-        sys.exit("Unsupported command.")
 
     al.terminate_session(SESSION)
 
