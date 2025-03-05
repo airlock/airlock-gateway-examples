@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # coding=utf-8
 """
-Version 1.3
 Script to manage IP list usages
 and to remove allow rule IP pattern
 All actions operate on the newest saved or active configuration

@@ -68,7 +68,7 @@ def main():
     )
     parser.add_argument("-g", "--gateway", required=True,
                         help="Airlock WAF hostname")
-    parser.add_argument("-G", "--deny-rule-group-id", required=True,
+    parser.add_argument("-G", "--deny-rule-group", required=True,
                         help="Deny Rule Group ID (shortname)")
     parser.add_argument("-a", "--action", choices=['enable', 'disable'], default='enable',
                         help="Enable or disable the deny rule group")

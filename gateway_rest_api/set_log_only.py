@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # coding=utf-8
 """
-Version 1.1
 Script to update log‑only mode on deny rule groups for selected mappings.
 
 Tested with Airlock Gateway versions 8.3 and 8.4.
@@ -16,11 +15,11 @@ selected by a regex. Changes are saved (and optionally activated).
 API key is provided via the –k flag or read from an “api_key.conf” file (with a [KEY] section).
 
 Usage examples:
-  Enable log‑only mode for deny rule groups (selected by group regex) on all mappings matching “^cust”:
+  Enable log‑only mode for deny rule groups (selected by group regex '.*') on all mappings matching “^cust”:
       ./set_log_only.py add -g my_airlock -M '^cust' -G '.*' -k YOUR_API_KEY
 
-  Disable log‑only mode (using –disable) on the same selection:
-      ./set_log_only.py add -g my_airlock -M '^cust' -G '.*' --disable -k YOUR_API_KEY
+  Disable log‑only mode (using –disable) for deny rule group 'SQL_PARAM_VALUE':
+      ./set_log_only.py add -g my_airlock -M '^cust' -G 'SQL_PARAM_VALUE' --disable -k YOUR_API_KEY
 
   (Optionally add –y to skip confirmation and –c to provide a comment; –p to specify a port)
 """
@@ -76,9 +75,9 @@ def get_mappings_and_groups(mapping_regex, group_regex, assumeyes):
     if not selected_mappings:
         terminate_with_error("No mappings selected")
     selected_groups = []
-    for dr in al.get_deny_rule_groups(SESSION):
-        if re.search(group_regex, dr["attributes"]["name"]):
-            selected_groups.append(dr)
+    for dr_group in al.get_deny_rule_groups(SESSION):
+        if re.search(group_regex, dr_group["attributes"]["name"]):
+            selected_groups.append(dr_group)
     if not selected_groups:
         terminate_with_error("No deny-rule groups selected")
     print("Selected mappings:")
@@ -99,15 +98,9 @@ def update_logonly_mode(mapping_regex, group_regex, log_only_value, assumeyes):
         for group in selected_groups:
             # Retrieve the current deny rule group usage data.
             group_data = al.get_mapping_deny_rule_group(SESSION, mapping["id"], group["id"])
-            print("Mapping ID:", mapping["id"], "Group ID:", group["id"])
-            print("Group data BEFORE PATCH:")
             print(group_data, "\n")
             # Patch the deny rule group: update logOnly attribute.
             al.update_mapping_deny_rule_group(SESSION, mapping["id"], group["id"], {"logOnly": log_only_value})
-            new_group_data = al.get_mapping_deny_rule_group(SESSION, mapping["id"], group["id"])
-            print("Group data AFTER PATCH:")
-            print(new_group_data, "\n")
-    # Optionally, you might remove the return here if you want to process all pairs.
     return
 
 def main():

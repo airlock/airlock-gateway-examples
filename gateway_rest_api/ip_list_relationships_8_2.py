@@ -12,10 +12,10 @@ Usage Examples:
   List all IP address lists:
       ./update_ip_list_relationship_8.2.py list -g mywaf.example.com -k YOUR_API_KEY
 
-  Update the whitelist of IP list 3 by appending all mappings whose names match "^cust":
+  Update the whitelist relationship of IP list 3 by appending all mappings whose names match "^cust":
       ./update_ip_list_relationship_8.2.py update -g mywaf.example.com -I 3 --whitelist -M '^cust' -y -c "Add cust mappings to whitelist" -k YOUR_API_KEY
 
-  Update the blacklist (without forcing confirmation):
+  Update the blacklist relationship (without forcing confirmation):
       ./update_ip_list_relationship_8.2.py update -g mywaf.example.com -I 3 --blacklist -M '^cust' -c "Add cust mappings to blacklist" -k YOUR_API_KEY
 """
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # coding=utf-8
 """
-Script to manage maintenance page settings (or delete mappings) on Airlock WAF mappings.
+Script to manage maintenance page settings on Airlock WAF mappings.
 Operations include:
     - Showing mappings with activated maintenance page:
          ./maintenance.py -g my_airlock -M "^mapping.*pattern$" -a show
@@ -114,7 +114,7 @@ def main():
     )
     parser.add_argument("-g", "--gateway", required=True,
                         help="Airlock WAF hostname")
-    parser.add_argument("-M", "--mapping-selector", required=True,
+    parser.add_argument("-M", "--mapping-regex", required=True,
                         help="Regular expression to select mappings (e.g. '^mapping_a$')")
     parser.add_argument("-a", "--action", choices=["enable", "disable", "show", "delete"],
                         required=True, help="Action to perform on the selected mappings")
@@ -175,8 +175,6 @@ def main():
                 print(f"Deleted mapping '{mapping['attributes']['name']}'.")
             else:
                 print(f"Failed to delete mapping '{mapping['attributes']['name']}'.")
-    else:
-        terminate_with_error("Invalid action specified.")
 
     # Prepare change info and activate configuration.
     affected_names = [mapping["attributes"]["name"] for mapping in mappings]

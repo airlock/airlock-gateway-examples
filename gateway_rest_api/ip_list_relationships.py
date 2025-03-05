@@ -8,12 +8,13 @@ This script supports three operations:
   Usage:
       ./ip_list_relationships.py list -g <HOSTNAME> [-p <PORT>] [-k <API_KEY>]
 
-  2. update : Updates an IP list’s relationships. Two update modes are supported:
-       --blacklist: Update the blacklist via the explicit endpoint.
-       --whitelist: Update the whitelist for all mappings matching a regex.
-                    For each mapping, the script patches its ipRules.ipAddressWhitelists
-                    by appending a new entry (or extending an existing one) that includes
-                    the provided IP list ID and a path pattern.
+  2. update : Updates an IP list's relationships. Two update modes are supported:
+       --blacklist: Assign an IP list as a blacklist to one or more mappings by updating the IP list's blacklist relationship. 
+                    The specified mappings are appended to the existing blacklist set.
+                    
+       --whitelist: Assign an IP list as a whitelist for one or more mappings by modifying the mapping's 
+                    `ipRules.ipAddressWhitelists` attribute. If an entry for the specified path exists, 
+                    the IP list is added to the existing set of whitelists. Otherwise, a new whitelist entry is created.
 
 After performing the updates, the script prompts (unless --assumeyes is given) and then activates the configuration.
 

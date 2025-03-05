@@ -4,7 +4,7 @@
 This Python script interacts with Airlock Gateway's REST API for managing the configuration of deny rule groups.
 It enables the addition, deletion, and listing of exceptions for deny rule groups through command-line options.
 
-Tested with Airlock Gateway verions 8.3 and 8.4.
+Tested with Airlock Gateway versions 8.3 and 8.4.
 
 **Requirements**
 
