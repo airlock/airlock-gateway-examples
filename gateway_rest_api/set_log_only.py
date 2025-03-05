@@ -16,10 +16,10 @@ API key is provided via the –k flag or read from an “api_key.conf” file (w
 
 Usage examples:
   Enable log‑only mode for deny rule groups (selected by group regex '.*') on all mappings matching “^cust”:
-      ./set_log_only.py add -g my_airlock -M '^cust' -G '.*' -k YOUR_API_KEY
+      ./set_log_only.py add -g my_airlock --mapping-regex '^cust' --group-regex '.*' -k YOUR_API_KEY
 
   Disable log‑only mode (using –disable) for deny rule group 'SQL_PARAM_VALUE':
-      ./set_log_only.py add -g my_airlock -M '^cust' -G 'SQL_PARAM_VALUE' --disable -k YOUR_API_KEY
+      ./set_log_only.py add -g my_airlock --mapping-regex '^cust' --group-regex 'SQL_PARAM_VALUE' --disable -k YOUR_API_KEY
 
   (Optionally add –y to skip confirmation and –c to provide a comment; –p to specify a port)
 """
@@ -109,9 +109,9 @@ def main():
     )
     parser.add_argument("-g", "--gateway", required=True,
                         help="Airlock Gateway hostname")
-    parser.add_argument("-M", "--mapping-regex", required=True,
+    parser.add_argument("--mapping-regex", required=True,
                         help="Regex to select mappings by name")
-    parser.add_argument("-G", "--group-regex", required=True,
+    parser.add_argument("--group-regex", required=True,
                         help="Regex to select deny-rule groups by name")
     parser.add_argument("--disable", action="store_true",
                         help="Disable log‑only mode (default is to enable)")

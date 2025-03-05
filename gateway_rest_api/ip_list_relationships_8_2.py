@@ -3,7 +3,7 @@
 """
 IP List Management on Airlock Gateway Version 8.2
 Script to update an IP address list’s relationships (whitelist or blacklist)
-by appending mapping entries.
+by appending mapping entries using the REST endpoint 'configuration/ip-address-lists/{ip_list_id}/relationships/(mappings-whitelist|mappings-blacklist)'
 
 After performing the update, the script will prompt (unless --assumeyes is given)
 to confirm and then either activate or save the new configuration using al.activate and al.save_config.
@@ -13,10 +13,10 @@ Usage Examples:
       ./update_ip_list_relationship_8.2.py list -g mywaf.example.com -k YOUR_API_KEY
 
   Update the whitelist relationship of IP list 3 by appending all mappings whose names match "^cust":
-      ./update_ip_list_relationship_8.2.py update -g mywaf.example.com -I 3 --whitelist -M '^cust' -y -c "Add cust mappings to whitelist" -k YOUR_API_KEY
+      ./update_ip_list_relationship_8.2.py update -g mywaf.example.com --ip-list-id 3 --whitelist --mapping-regex '^cust' -y -c "Add cust mappings to whitelist" -k YOUR_API_KEY
 
   Update the blacklist relationship (without forcing confirmation):
-      ./update_ip_list_relationship_8.2.py update -g mywaf.example.com -I 3 --blacklist -M '^cust' -c "Add cust mappings to blacklist" -k YOUR_API_KEY
+      ./update_ip_list_relationship_8.2.py update -g mywaf.example.com --ip-list-id 3 --blacklist --mapping-regex '^cust' -c "Add cust mappings to blacklist" -k YOUR_API_KEY
 """
 
 import sys
@@ -49,7 +49,7 @@ def register_cleanup_handler():
     def cleanup(signum, frame):
         al.terminate_session(SESSION)
         sys.exit("Session terminated due to signal.")
-    for sig in (signal.SIGABRT, signal.SIGILL, signal.SIGINT, signal.SIGTERM):
+    for sig in (signal.SIGABRT, signal.SIGILL, signal.SIGSEGV, signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, cleanup)
 
 def get_api_key(args, key_file=DEFAULT_API_KEY_FILE):
@@ -117,6 +117,7 @@ def update_ip_list_relationship(session, ip_list_id: str, relationship_field: st
         print("IP list updated successfully.")
     else:
         print("Failed to update IP list.")
+    return {} # the return value is not used.
 
 def main():
     parser = argparse.ArgumentParser(
@@ -139,12 +140,12 @@ def main():
     parser_update.add_argument("-k", "--api-key", help="REST API key for Airlock Gateway")
     parser_update.add_argument("-p", "--port", type=int, default=443,
                                help="Gateway HTTPS port (default: 443)")
-    parser_update.add_argument("-I", "--ip-list-id", required=True,
+    parser_update.add_argument("-i", "--ip-list-id", required=True,
                                help="ID of the IP address list to update")
     group = parser_update.add_mutually_exclusive_group(required=True)
     group.add_argument("--whitelist", action="store_true", help="Append mappings to the whitelist")
     group.add_argument("--blacklist", action="store_true", help="Append mappings to the blacklist")
-    parser_update.add_argument("-M", "--mapping-regex", required=True,
+    parser_update.add_argument("--mapping-regex", required=True,
                                help="Regex pattern to select mappings by name")
     parser_update.add_argument("-y", "--assumeyes", action="store_true",
                                help="Automatically answer yes for confirmation")

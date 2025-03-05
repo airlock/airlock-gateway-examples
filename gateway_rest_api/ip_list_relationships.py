@@ -25,10 +25,10 @@ Usage Examples:
       ./ip_list_relationships.py list -g mywaf.example.com -k YOUR_API_KEY
 
   Update blacklist:
-      ./ip_list_relationships.py update -g mywaf.example.com -I 3 --blacklist -M '^cust' -y -c "Add blacklist entries" -k YOUR_API_KEY
+      ./ip_list_relationships.py update -g mywaf.example.com -i 3 --blacklist --mapping-regex '^cust' -y -c "Add blacklist entries" -k YOUR_API_KEY
 
-  Update whitelist (requires --path-pattern or -P):
-      ./ip_list_relationships.py update -g mywaf.example.com -I 3 --whitelist -M '^cust' -P 'testpath' -c "Add whitelist entries" -k YOUR_API_KEY
+  Update whitelist (requires --path-pattern):
+      ./ip_list_relationships.py update -g mywaf.example.com -i 3 --whitelist --mapping-regex '^cust' --path-pattern 'testpath' -c "Add whitelist entries" -k YOUR_API_KEY
 """
 
 import sys
@@ -61,7 +61,7 @@ def register_cleanup_handler():
     def cleanup(signum, frame):
         al.terminate_session(SESSION)
         sys.exit("Session terminated due to signal.")
-    for sig in (signal.SIGABRT, signal.SIGILL, signal.SIGINT, signal.SIGTERM):
+    for sig in (signal.SIGABRT, signal.SIGILL, signal.SIGSEGV, signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, cleanup)
 
 def get_api_key(args, key_file=DEFAULT_API_KEY_FILE):
@@ -104,25 +104,27 @@ def update_blacklist(session, ip_list_id: str, mapping_regex: str, force: bool) 
 
     # Build the payload with the mapping references.
     mapping_refs = [{"type": "mapping", "id": mapping["id"]} for mapping in selected_mappings]
-    payload = {"data": mapping_refs}
+    mapping_info = [(mapping["id"], mapping["attributes"]["name"]) for mapping in selected_mappings]
 
     if not force:
-        print(f"About to update IP list {ip_list_id} blacklist with these mapping IDs:")
-        for ref in mapping_refs:
-            print(f"  {ref['id']}")
+        print(f"About to update IP list {ip_list_id} blacklist relationship with these mappings:")
+        for mapping_id, mapping_name in mapping_info:
+            print(f"  ID: {mapping_id}, Name: {mapping_name}")
         ans = input("Continue with update? [y/n] ")
         if ans.lower() != "y":
             terminate_with_error("Operation cancelled.")
 
     # PATCH the new blacklist mappings.
     endpoint = f"/configuration/ip-address-lists/{ip_list_id}/relationships/mappings-blacklist"
+    payload = {"data": mapping_refs}
     res = al.patch(session, endpoint, payload, exp_code=[204, 404])
     if res.status_code == 204:
         print("IP blacklist updated successfully.")
     else:
         print("Failed to update IP blacklist.")
 
-    return {"updated_mapping_ids": [mapping["id"] for mapping in selected_mappings]}
+    return {"updated_mappings": [name for _, name in mapping_info]}
+
 
 def update_whitelist(session, ip_list_id: str, mapping_regex: str, path_pattern: str, force: bool) -> dict:
     """
@@ -209,16 +211,16 @@ def main():
     parser_update.add_argument("-k", "--api-key", help="REST API key for Airlock Gateway")
     parser_update.add_argument("-p", "--port", type=int, default=443,
                                help="Gateway HTTPS port (default: 443)")
-    parser_update.add_argument("-I", "--ip-list-id", required=True,
+    parser_update.add_argument("-i", "--ip-list-id", required=True,
                                help="ID of the IP address list to update")
     group = parser_update.add_mutually_exclusive_group(required=True)
     group.add_argument("--blacklist", action="store_true",
                        help="Update the blacklist (uses /relationships/mappings-blacklist)")
     group.add_argument("--whitelist", action="store_true",
                        help="Update the whitelist (updates each mapping's ipRules.ipAddressWhitelists)")
-    parser_update.add_argument("-M", "--mapping-regex", required=True,
+    parser_update.add_argument("--mapping-regex", required=True,
                                help="Regex pattern to select mappings by name")
-    parser_update.add_argument("-P", "--path-pattern",
+    parser_update.add_argument("--path-pattern",
                                help="(Required for whitelist updates) Path pattern for the whitelist entry")
     parser_update.add_argument("-y", "--assumeyes", action="store_true",
                                help="Automatically confirm without prompting")

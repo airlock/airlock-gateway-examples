@@ -5,7 +5,7 @@ Script to enable or disable a deny rule group on all mappings.
 Tested with Airlock Gateway versions 8.3 and 8.4.
 
 Usage example:
-  ./enable_deny_rule_group.py -g mywaf.example.com -G SQLI_PARAM_VALUE -a enable -k <YOUR_API_KEY> -y -c "Update deny rule group"
+  ./enable_deny_rule_group.py -g mywaf.example.com --group-regex SQLI_PARAM_VALUE -a enable -k <YOUR_API_KEY> -y -c "Update deny rule group"
   
 If -k is not provided, the script will try to read the API key from "api_key.conf"
 with a [KEY] section and an "api_key" value.
@@ -68,8 +68,8 @@ def main():
     )
     parser.add_argument("-g", "--gateway", required=True,
                         help="Airlock WAF hostname")
-    parser.add_argument("-G", "--deny-rule-group", required=True,
-                        help="Deny Rule Group ID (shortname)")
+    parser.add_argument("--group-regex", required=True,
+                        help="Deny Rule Group shortname")
     parser.add_argument("-a", "--action", choices=['enable', 'disable'], default='enable',
                         help="Enable or disable the deny rule group")
     parser.add_argument("-p", "--port", type=int, default=443,
@@ -82,20 +82,11 @@ def main():
     args = parser.parse_args()
 
     # Process the comment: replace placeholders if present.
-    comment = args.comment.format(action=args.action, group_id=args.deny_rule_group_id)
+    comment = args.comment.format(action=args.action, group_id=args.group_regex)
 
     # Get API key: either from command-line or config file.
-    if args.api_key:
-        api_key = args.api_key.strip()
-    elif os.path.exists(DEFAULT_API_KEY_FILE):
-        config = configparser.ConfigParser()
-        config.read(DEFAULT_API_KEY_FILE)
-        try:
-            api_key = config.get("KEY", "api_key").strip()
-        except Exception as e:
-            sys.exit("Error reading API key from api_key.conf: " + str(e))
-    else:
-        sys.exit("API key needed, either via -k option or in an api_key.conf file.")
+    api_key = get_api_key(args)
+
 
     # Create a new session.
     global SESSION
@@ -118,7 +109,7 @@ def main():
     for mapping in mappings:
         mapping_id = mapping['id']
         # Retrieve the current deny rule group settings.
-        mapping_drg = al.get_mapping_deny_rule_group(SESSION, mapping_id, args.deny_rule_group_id)
+        mapping_drg = al.get_mapping_deny_rule_group(SESSION, mapping_id, args.group_regex)
         print(f"Mapping ID {mapping_id}: Current settings:")
         print(json.dumps(mapping_drg, indent=4))
         # Update the "enabled" attribute.
@@ -126,7 +117,7 @@ def main():
         success = al.update_mapping_deny_rule_group(
             SESSION,
             mapping_id,
-            args.deny_rule_group_id,
+            args.group_regex,
             mapping_drg['attributes']
         )
         if success:

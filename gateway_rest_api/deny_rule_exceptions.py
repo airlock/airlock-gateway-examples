@@ -25,22 +25,22 @@ The script contains three main functionalities:
 3. list: List exceptions from a deny rule group.
 
 Each function requires regexes for selecting the deny rule groups and mappings.
-The regexes can be specified using the '-G' and '-M' command-line options.
+The regex patterns can be specified using the '--group-regex' and '--mapping-regex' command-line options.
 
 The add and delete functions require an identifier for the exception (-i command-line option).
 
-Moreover, the add function requires a pattern for the exception (-P or -H command-line options):
-- `-P` or `--parameter-name-regex`: Specifies a Parameter Name exception.
-- `-H` or `--header-name-regex`:  Specifies a Header Name exception.
+Moreover, the add function requires a pattern for the exception ('--parameter-name' or '--header-name' command-line options):
+- `--parameter-name`: Specifies a Parameter Name exception.
+- `--header-name`:  Specifies a Header Name exception.
 
 **Other important options:**
 
 - `-g` or `--gateway`: Specify the gateway address
 - `-p` or `--port`: Specify the HTTPS port for the gateway (default is 443)
-- `-P` or `--parameter-name-pattern`: Specify a Parameter Name Pattern.
-- `-H` or `--header-name-pattern`:  Specify a Header Name Pattern.
-- `-M` or `--mapping-regex`:  Select mappings by using a regular expression on the mapping name.
-- `-G` or `--group-regex`:  Select deny rule groups by using a regular expression on the group name.
+- `--parameter-name`: Specify a Parameter Name Pattern.
+- `--header-name`:  Specify a Header Name Pattern.
+- `--mapping-regex`:  Select mappings by using a regular expression on the mapping name.
+- `--group-regex`:  Select deny rule groups by using a regular expression on the group name.
 - `-k` or `--api-key`: REST API key for Airlock Gateway.
 - `-i` or `--identifier`: Identifier for the exception.
 - `-c` or `--comment`: Comment for the change (default is 'Modify exceptions through REST API')
@@ -49,11 +49,11 @@ Moreover, the add function requires a pattern for the exception (-P or -H comman
 
 **Examples**
 Add an exception for the parameter "comment" to all parameter value deny-rule groups on all "MyBank"-mappings:
-    ./deny_rule_exceptions.py add -g gateway -M '^MyBank.*' -G '.*' -P '^comment$' -i 'paymentComment1' -c test --activate
+    ./deny_rule_exceptions.py add -g gateway --mapping-regex '^MyBank.*' --group-regex '.*' --parameter-name '^comment$' -i 'paymentComment1' -c test --activate
 Delete the exception 'paymentComment1' from all "MyBank"-mappings in all deny rule groups, activate the configuration:
-    ./deny_rule_exceptions.py delete -g gateway -M '^MyBank.*' -G '.*'  -i 'paymentComment1' -c test --activate
+    ./deny_rule_exceptions.py delete -g gateway --mapping-regex '^MyBank.*' --group-regex '.*'  -i 'paymentComment1' -c test --activate
 List exceptions from all "MyBank"-mappings:
-    ./deny_rule_exceptions.py list -g gateway -M '^MyBank.*' -G '.*'
+    ./deny_rule_exceptions.py list -g gateway --mapping-regex '^MyBank.*' --group-regex '.*'
 """
 
 from airlock_gateway_rest_api_lib.src.airlock_gateway_rest_api_lib import airlock_gateway_rest_api_lib as al
@@ -270,27 +270,27 @@ def main():
     subparsers.required = True
     subparsers.dest = "command"
 
-    parser_add.add_argument("-G", "--group-regex", help="Identifier for the deny rule", required=True)
-    parser_add.add_argument("-M", "--mapping-regex", help="Pattern selecting mapping names", required=True)
+    parser_add.add_argument("--group-regex", help="Identifier for the deny rule", required=True)
+    parser_add.add_argument("--mapping-regex", help="Pattern selecting mapping names", required=True)
     parser_add.add_argument("-g", "--gateway", help="Gateway to activate config on", required=True)
     parser_add.add_argument("-k", "--api-key", help="REST API key")
     parser_add.add_argument("-p", "--port", help="Gateway HTTPS port", type=int, default=443)
 
-    parser_del.add_argument("-G", "--group-regex", help="Identifier for the deny rule", required=True)
-    parser_del.add_argument("-M", "--mapping-regex", help="Pattern selecting mapping names", required=True)
+    parser_del.add_argument("--group-regex", help="Identifier for the deny rule", required=True)
+    parser_del.add_argument("--mapping-regex", help="Pattern selecting mapping names", required=True)
     parser_del.add_argument("-g", "--gateway", help="Gateway to activate config on", required=True)
     parser_del.add_argument("-k", "--api-key", help="REST API key")
     parser_del.add_argument("-p", "--port", help="Gateway HTTPS port", type=int, default=443)
 
-    parser_lst.add_argument("-G", "--group-regex", help="Identifier for the deny rule", required=True)
-    parser_lst.add_argument("-M", "--mapping-regex", help="Pattern selecting mapping names", required=True)
+    parser_lst.add_argument("--group-regex", help="Identifier for the deny rule", required=True)
+    parser_lst.add_argument("--mapping-regex", help="Pattern selecting mapping names", required=True)
     parser_lst.add_argument("-g", "--gateway", help="Gateway to activate config on", required=True)
     parser_lst.add_argument("-k", "--api-key", help="REST API key")
     parser_lst.add_argument("-p", "--port", help="Gateway HTTPS port", type=int, default=443)
 
     parse_pattern = parser_add.add_mutually_exclusive_group(required=True)
-    parse_pattern.add_argument("-H", "--header-name-pattern", help="Header Name Pattern")
-    parse_pattern.add_argument("-P", "--parameter-name-pattern", help="Parameter Name Pattern")
+    parse_pattern.add_argument("--header-name", help="Header Name Pattern")
+    parse_pattern.add_argument("--parameter-name", help="Parameter Name Pattern")
 
     parser_add.add_argument("--activate", help="Activate configuration", action="store_true")
     parser_add.add_argument("-c", "--comment", help="Comment for the change", default="Modify exceptions with REST API")
@@ -331,9 +331,10 @@ def main():
         list_exceptions(args.mapping_regex, args.group_regex)
         al.terminate_session(SESSION)
         return
-
+    
     if args.command == "add":
-        add_exception(args.mapping_regex, args.group_regex, args.parameter_name_pattern, args.header_name_pattern,
+        # Corrected the argument names here
+        add_exception(args.mapping_regex, args.group_regex, args.parameter_name, args.header_name,
                       args.identifier, args.assumeyes)
     elif args.command == "delete":
         delete_exception(args.mapping_regex, args.group_regex, args.identifier, args.assumeyes)

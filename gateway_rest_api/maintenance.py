@@ -4,12 +4,12 @@
 Script to manage maintenance page settings on Airlock WAF mappings.
 Operations include:
     - Showing mappings with activated maintenance page:
-         ./maintenance.py -g my_airlock -M "^mapping.*pattern$" -a show
+         ./maintenance.py -g my_airlock --mapping-regex "^mapping.*pattern$" -a show
     - Enabling/disabling maintenance on selected mappings:
-         ./maintenance.py -g my_airlock -M "^mapping.*pattern$" -a enable
-         ./maintenance.py -g my_airlock -M "^mapping.*pattern$" -a disable
+         ./maintenance.py -g my_airlock --mapping-regex "^mapping.*pattern$" -a enable
+         ./maintenance.py -g my_airlock --mapping-regex "^mapping.*pattern$" -a disable
     - Deleting selected WAF mappings:
-         ./maintenance.py -g my_airlock -M "^mapping.*pattern$" -a delete
+         ./maintenance.py -g my_airlock --mapping-regex "^mapping.*pattern$" -a delete
 
 Tested with Airlock Gateway versions 8.3 and 8.4.
 
@@ -114,7 +114,7 @@ def main():
     )
     parser.add_argument("-g", "--gateway", required=True,
                         help="Airlock WAF hostname")
-    parser.add_argument("-M", "--mapping-regex", required=True,
+    parser.add_argument("--mapping-regex", required=True,
                         help="Regular expression to select mappings (e.g. '^mapping_a$')")
     parser.add_argument("-a", "--action", choices=["enable", "disable", "show", "delete"],
                         required=True, help="Action to perform on the selected mappings")
@@ -138,7 +138,7 @@ def main():
     al.load_active_config(SESSION)
 
     # Get selected mappings based on mapping selector regex
-    mappings = get_selected_mappings(SESSION, args.mapping_selector)
+    mappings = get_selected_mappings(SESSION, args.mapping_regex)
     if not mappings:
         terminate_with_error("No mappings found matching the selector pattern.")
 
