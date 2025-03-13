@@ -1,270 +1,163 @@
 #!/usr/bin/env python3
 # coding=utf-8
 """
-Version 1.1
-Script to activate log-only mode on a Deny Rule on a set of mappings.
-All actions operate on the newest saved or active configuration and
-will save a new configuration.
+Script to update log‑only mode on deny rule groups for selected mappings.
 
-The new configuration will NOT be activated. You have to load and activate
-it in the Configuration Center ("Configuration" - "Configuration Files").
-We suggest to use the config diff function in the GUI before activation.
+Tested with Airlock Gateway versions 8.3 and 8.4.
 
-Script may require about 3 minutes to patch 150 mappings.
+This script directly interacts with the REST API endpoint:
 
-Example usage:
+    PATCH /configuration/mappings/{mappingId}/deny-rule-groups/{groupShortName}
 
-Activate log-only mode for rule TI_001a on all mappings containing one of the
-strings cust0, cust1,..., cust9 on system aldea
+It updates the “logOnly” attribute for the specified deny rule groups on all mappings
+selected by a regex. Changes are saved (and optionally activated).
 
-./set_log_only.py -k api_key -n aldea -r -2170 -m 'cust[0-9]'
+API key is provided via the –k flag or read from an “api_key.conf” file (with a [KEY] section).
 
-To find out the rule id use the following shell comand on Airlock Gateway
+Usage examples:
+  Enable log‑only mode for deny rule groups (selected by group regex '.*') on all mappings matching “^cust”:
+      ./set_log_only.py add -g my_airlock --mapping-regex '^cust' --group-regex '.*' -k YOUR_API_KEY
 
-NAME=TI_001c; grep -P -B1 "\.Name=.*$NAME" /opt/airlock/mgt-agent/conf/default-patterns/denyRuleFactoryDefaults.properties | awk -F= '/Id=/ { print $2 }'
+  Disable log‑only mode (using –disable) for deny rule group 'SQL_PARAM_VALUE':
+      ./set_log_only.py add -g my_airlock --mapping-regex '^cust' --group-regex 'SQL_PARAM_VALUE' --disable -k YOUR_API_KEY
 
-Tested with Airlock Gateway: 7.7.1, 7.6.2, 7.5.3
+  (Optionally add –y to skip confirmation and –c to provide a comment; –p to specify a port)
 """
 
-from cgitb import enable
-from urllib import request
-import ssl
-import json
-import os
 import sys
-import re
-from argparse import ArgumentParser
-from http.cookiejar import CookieJar
+import os
+import argparse
+import configparser
+import logging
 import signal
-from zipfile import ZipFile
-from io import BytesIO
-import xml.etree.ElementTree as ET
+import re
 
-DEFAULT_API_KEY_FILE = "./api_key"
+from airlock_gateway_rest_api_lib.src.airlock_gateway_rest_api_lib import airlock_gateway_rest_api_lib as al
 
-parser = ArgumentParser()
-parser.add_argument("-n", dest="host", metavar="hostname",
-                    required=True,
-                    help="Airlock Gateway hostname")
-parser.add_argument("-r", dest="rule_id", metavar="rule_id",
-                    required=True,
-                    help="Deny Rule ID")
-group_sel = parser.add_mutually_exclusive_group(required=True)
-group_sel.add_argument("-m", dest="mapping_selector_pattern",
-                       metavar="pattern",
-                       help="Pattern matching mapping name, e.g. ^mapping_a$")
-group_sel.add_argument("-l", dest="mapping_selector_label", metavar="label",
-                       help="Label for mapping selection")
+# Configure logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s %(levelname)s %(message)s",
+    datefmt="%H:%M:%S",
+)
 
-parser.add_argument("-f", dest="confirm", action="store_false",
-                    help="Force, no confirmation needed")
-parser.add_argument("-d", dest="activate", action="store_false",
-                    help="disabled log-only")
-parser.add_argument("-k", dest="api_key_file", metavar="api_key_file",
-                    default=DEFAULT_API_KEY_FILE,
-                    help="Path to API key file "
-                    f"(default {DEFAULT_API_KEY_FILE})")
+SESSION = None
 
+def terminate_with_error(message=None):
+    if message:
+        print(message)
+    al.terminate_session(SESSION)
+    sys.exit(1)
 
-
-
-args = parser.parse_args()
-sys.tracebacklimit = 0
-
-TARGET_GATEWAY = f'https://{args.host}'
-CONFIG_XML_NAME = "alec_table.xml"
-
-try:
-    api_key = open(args.api_key_file, 'r').read().strip()
-except (IOError, FileNotFoundError) as error:
-    print(f'Can not read API key from {args.api_key_file}')
-    sys.exit(-1)
-
-DEFAULT_HEADERS = {"Authorization": f'Bearer {api_key}'}
-
-# we need a cookie store
-opener = request.build_opener(request.HTTPCookieProcessor(CookieJar()))
-
-# ignore invalid SSL cert on the management interface
-if (not os.environ.get('PYTHONHTTPSVERIFY', '') and
-        getattr(ssl, '_create_unverified_context', None)):
-    ssl._create_default_https_context = ssl._create_unverified_context
-
-
-# method to send REST calls
-def send_request(
-        method,
-        path,
-        body="",
-        accept_header="application/json",
-        content_type="application/json"):
-    DEFAULT_HEADERS['Accept'] = accept_header
-    DEFAULT_HEADERS['Content-Type'] = content_type
-    if content_type == "application/json":
-        body = body.encode('utf-8')
-    req = request.Request(TARGET_GATEWAY + "/airlock/rest/" + path,
-                          body, DEFAULT_HEADERS)
-    req.get_method = lambda: method
-    r = opener.open(req)
-    return r.read()
-
-
-def terminate_and_exit(text):
-    send_request("POST", "session/terminate")
-    sys.exit(text)
-
-
-# signal handler
 def register_cleanup_handler():
     def cleanup(signum, frame):
-        terminate_and_exit("Terminate session")
-
+        al.terminate_session(SESSION)
+        sys.exit("Session terminated due to signal.")
     for sig in (signal.SIGABRT, signal.SIGILL, signal.SIGINT, signal.SIGSEGV,
-                signal.SIGTERM):
+                signal.SIGTERM, signal.SIGQUIT):
         signal.signal(sig, cleanup)
 
+def get_api_key(args, key_file="api_key.conf"):
+    if args.api_key:
+        return args.api_key.strip()
+    elif os.path.exists(key_file):
+        config = configparser.ConfigParser()
+        config.read(key_file)
+        try:
+            return config.get("KEY", "api_key").strip()
+        except Exception as e:
+            sys.exit(f"Error reading API key from {key_file}: {e}")
+    else:
+        sys.exit("API key needed, either via -k option or in an api_key.conf file.")
 
-def load_last_config():
-    resp = json.loads(send_request("GET", "configuration/configurations"))
-    send_request("POST", 'configuration/configurations/'
-                         f"{resp['data'][0]['id']}/load")
+def get_mappings_and_groups(mapping_regex, group_regex, assumeyes):
+    selected_mappings = al.select_mappings(SESSION, pattern=mapping_regex)
+    if not selected_mappings:
+        terminate_with_error("No mappings selected")
+    selected_groups = []
+    for dr_group in al.get_deny_rule_groups(SESSION):
+        if re.search(group_regex, dr_group["attributes"]["name"]):
+            selected_groups.append(dr_group)
+    if not selected_groups:
+        terminate_with_error("No deny-rule groups selected")
+    print("Selected mappings:")
+    for m in selected_mappings:
+        print("\t" + m["attributes"]["name"])
+    print("Selected deny-rule groups:")
+    for g in selected_groups:
+        print("\t" + g["attributes"]["name"])
+    if not assumeyes:
+        ans = input("Do you want to continue? [y/n] ")
+        if ans.lower() != "y":
+            terminate_with_error("Operation cancelled by user.")
+    return selected_mappings, selected_groups
 
+def update_logonly_mode(mapping_regex, group_regex, log_only_value, assumeyes):
+    selected_mappings, selected_groups = get_mappings_and_groups(mapping_regex, group_regex, assumeyes)
+    for mapping in selected_mappings:
+        for group in selected_groups:
+            # Retrieve the current deny rule group usage data.
+            group_data = al.get_mapping_deny_rule_group(SESSION, mapping["id"], group["id"])
+            print(group_data, "\n")
+            # Patch the deny rule group: update logOnly attribute.
+            al.update_mapping_deny_rule_group(SESSION, mapping["id"], group["id"], {"logOnly": log_only_value})
+    return
 
-def get_all_mappings():
-    resp = json.loads(send_request("GET", "configuration/mappings"))['data']
-    return sorted(resp, key=lambda x: x['attributes']['name'])
+def main():
+    parser = argparse.ArgumentParser(
+        description="Update log‑only mode for deny rule groups on selected mappings."
+    )
+    parser.add_argument("-g", "--gateway", required=True,
+                        help="Airlock Gateway hostname")
+    parser.add_argument("--mapping-regex", required=True,
+                        help="Regex to select mappings by name")
+    parser.add_argument("--group-regex", required=True,
+                        help="Regex to select deny-rule groups by name")
+    parser.add_argument("--disable", action="store_true",
+                        help="Disable log‑only mode (default is to enable)")
+    parser.add_argument("-y", "--assumeyes", action="store_true",
+                        help="Automatically answer yes for all questions")
+    parser.add_argument("-k", "--api-key", help="REST API key for Airlock Gateway")
+    parser.add_argument("-p", "--port", type=int, default=443,
+                        help="Gateway HTTPS port (default: 443)")
+    parser.add_argument("-c", "--comment", default="Set log-only mode via REST API",
+                        help="Comment for the configuration change")
+    args = parser.parse_args()
 
+    global SESSION
+    api_key = get_api_key(args)
+    SESSION = al.create_session(args.gateway, api_key, args.port)
+    if not SESSION:
+        sys.exit("Could not create session. Check gateway, port, and API key.")
+    register_cleanup_handler()
 
-def get_mappings():
-    # filter mappings
-    return ([
-        {'id': x['id'],
-         'name': x['attributes']['name'],
-         'ip_rules': x['attributes']['ipRules']}
-        for x in get_all_mappings() if (
-            args.mapping_selector_pattern and
-            re.search(args.mapping_selector_pattern,
-                      x['attributes']['name']) or
-            args.mapping_selector_label in x['attributes']['labels']
-        )
-    ])
+    # Load the active configuration.
+    al.load_active_config(SESSION)
 
+    # Determine desired logOnly mode.
+    log_only_value = False if args.disable else True
 
-def create_change_info(affected_mapping_names):
-    if args.activate:
-        change_info = 'Log-only for rule {} enabled'.format(args.rule_id)
-    else:    
-        change_info = 'Log-only for rule {} removed'.format(args.rule_id)
+    # Update log-only mode for each mapping and each deny rule group selected.
+    update_logonly_mode(args.mapping_regex, args.group_regex, log_only_value, args.assumeyes)
 
-    change_info += ' for the following mapping(s): \n\t{}'\
-                   .format('\n\t'.join(affected_mapping_names))
-    return change_info
+    # Prepare change info.
+    # We list the names of all affected mappings.
+    affected_names = [m["attributes"]["name"] for m in al.select_mappings(SESSION, pattern=args.mapping_regex)]
+    change_info = f"Log‑only mode {'disabled' if args.disable else 'enabled'} for deny rule groups on mappings: " + ", ".join(affected_names)
+    print("\n" + change_info)
 
+    # Confirm change (unless assumeyes is given) and save configuration.
+    if not args.assumeyes:
+        ans = input("\nContinue to save the new configuration? [y/n] ")
+        if ans.lower() != "y":
+            terminate_with_error("Operation cancelled.")
+    if al.activate(SESSION, args.comment):
+        print("Configuration activated successfully.")
+    else:
+        # If not activated, just save.
+        al.save_config(SESSION, args.comment)
+        print("Configuration saved.")
+    al.terminate_session(SESSION)
 
-def export_mappings(mappings):
-    mapping_xmls = []
-    for mapping in mappings:
-        resp = send_request(method="GET",
-                            path="configuration/mappings/{}/export".format(
-                                mapping['id']),
-                            accept_header="application/zip")
-        z = ZipFile(BytesIO(resp))
-        mapping_xml = z.open(CONFIG_XML_NAME).read()
-        mapping_xmls.append(mapping_xml)
-    return mapping_xmls
-
-def modify_mappings(mapping_xmls):
-    new_mapping_xmls = []
-    for mapping_xml in mapping_xmls:
-        doc = ET.fromstring(mapping_xml)
-        mapping_name = doc.find('./Mappings/Mapping/Name').text
-
-        rules = doc.findall('.//DenyRuleUsage')
-        rule = None
-        for r in rules:
-            if r.findtext('DenyRuleId') == args.rule_id:
-                rule = r
-        if rule == None:
-            print ("No deny Rule found with Id: {}".format(args.rule_id))
-            terminate_and_exit()
-
-        enabled = rule.find('.//Enabled')
-        log_only = rule.find('.//LogOnly')
-        if args.activate:
-            enabled.text = 'true'
-            log_only.text = 'true'
-        else:
-            enabled.text = 'false'
-            log_only.text = 'false'
-
-        new_mapping_xmls.append(ET.tostring(doc))
-    return new_mapping_xmls
-
-
-def upload_mappings(mapping_xmls):
-    for mapping_xml in mapping_xmls:
-        mapping_zip = BytesIO()
-        with ZipFile(mapping_zip, mode="w") as zf:
-            zf.writestr(CONFIG_XML_NAME, mapping_xml)
-
-        mapping_zip.seek(0)
-
-        send_request(method="PUT",
-                     path="configuration/mappings/import",
-                     body=mapping_zip.read(),
-                     content_type="application/zip")
-
-
-def get_mapping_names(mapping_xmls):
-    mapping_names = []
-    for mapping_xml in mapping_xmls:
-        doc = ET.fromstring(mapping_xml)
-        mapping_name = doc.find('./Mappings/Mapping/Name').text
-        mapping_names.append(mapping_name)
-    return sorted(mapping_names)
-
-
-def confirm(change_info):
-    if not args.confirm:
-        return True
-    print(change_info)
-    if input('\nContinue to save the config? [y/n] ') == 'y':
-        return True
-    print("Nothing changed")
-    return False
-
-
-def save_config(change_info):
-    data = {"comment": "REST: " + change_info.replace('\n\t', ', ')
-                                             .replace(': ,', ':')}
-
-    # save config
-    send_request("POST", "configuration/configurations/save", json.dumps(data))
-    print(f"\nConfig saved with comment: {data['comment']}")
-
-
-# create session
-send_request("POST", "session/create")
-register_cleanup_handler()
-
-# load last config (active or saved)
-load_last_config()
-
-# filter mappings
-mappings = get_mappings()
-if not mappings:
-    terminate_and_exit("No mapping found - exit")
-
-
-mapping_xmls = export_mappings(mappings)
-modified_mapping_xmls = modify_mappings(mapping_xmls)
-upload_mappings(modified_mapping_xmls)
-affected_mapping_names = get_mapping_names(modified_mapping_xmls)
-
-change_info = create_change_info(affected_mapping_names)
-confirm(change_info) or terminate_and_exit(0)
-save_config(change_info)
-
-terminate_and_exit(0)
-
-
+if __name__ == "__main__":
+    main()
