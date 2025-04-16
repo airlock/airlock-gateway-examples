@@ -13,5 +13,4 @@ To import the dashboard and associated visualizations:
 ### Content
 - **dos.ndjson** Dashboard to analyze DDOS attacks
   - Tested with:
-    - Airlock Gateway 8.0 (Kibana 8.8.1)
     - Airlock Gateway 8.3.1 (Kibana 8.15.2)
