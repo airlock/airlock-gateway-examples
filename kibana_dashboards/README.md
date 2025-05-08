@@ -2,6 +2,7 @@ This directory contains Kibana dashboards for Airlock Gateway
 
 The files are not part of the official Airlock product delivery and Ergon/Airlock does not provide support for it. Best effort support may be provided by the contributor of the script.
 
+### Getting started
 **Import dashboard and associated visualizations**
 
 1. Open Log Viewer in the Airlock Gateway Configuration Center
@@ -15,7 +16,7 @@ The files are not part of the official Airlock product delivery and Ergon/Airloc
 1. Click the hamburger button in the upper left corner
 1. Goto Dashboards - Denial of Service Analysis
 
-**Filter for specific virtual host**
+**Filter for a specific virtual host**
 
 Click the name of the virtual host in the first chart to filter the whole dashboard for it. Or use this query in the KQL query bar:
 
