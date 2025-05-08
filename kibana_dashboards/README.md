@@ -13,13 +13,32 @@ The files are not part of the official Airlock product delivery and Ergon/Airloc
 **Open Dashboard**
 
 1. Click the hamburger button in the upper left corner
-2. Goto Dashboards - Denial of Service Analysis
+1. Goto Dashboards - Denial of Service Analysis
 
-**Filter for specific Virtual Host**
+**Filter for specific virtual host**
 
-Use this query in the KQL query bar:
+Click the name of the virtual host in the first chart to filter the whole dashboard for it. Or use this query in the KQL query bar:
 
 `vhost : "my.vhostname.ch"`
+
+### How to interpret the dashboards
+
+Compare a timeline before an active DDoS attack with a timeline under active DDoS attacks (e.g. 24h each). The dashboards help to define a baseline with the following features:
+- [DoS Attack Prevention](https://docs.airlock.com/gateway/8.3/index/1583435032060.html) on mapping
+- [Dynamic IP Blocking](https://docs.airlock.com/gateway/8.3/index/1571978527018.html) on mapping and globally
+- [Geolocation filter](https://docs.airlock.com/gateway/8.3/index/1571978527012.html) globally
+- [IP session limit](https://docs.airlock.com/gateway/8.3/index/1583435032082.html) globally
+
+| Feature      | Dashboard |
+| ----------- | ----------- |
+| DoS Attack Prevention  | Top 10 IPs |
+| DoS Attack Prevention | Top 10 mappings |
+| Dynamic IP Blocking | Top 10 IPs |
+| Dynamic IP Blocking | Top 10 mappings |
+| IP session limit | Sessions created / destroyed |
+| IP session limit | Average sessions per minute per IP created |
+| Geolocation filter | Requests by country |
+| Geolocation filter | Requests by countries by 10 minutes |
 
 ### Content
 - **dos.ndjson** Dashboard to analyze DDOS attacks
