@@ -34,6 +34,7 @@ Compare a timeline before an active DDoS attack with a timeline under active DDo
 | ----------- | ----------- |
 | DoS Attack Prevention  | Top 10 IPs |
 | DoS Attack Prevention | Top 10 mappings |
+| DoS Attack Prevention | Average requests per minute per IP |
 | Dynamic IP Blocking | Top 10 IPs |
 | Dynamic IP Blocking | Top 10 mappings |
 | IP session limit | Sessions created / destroyed |
